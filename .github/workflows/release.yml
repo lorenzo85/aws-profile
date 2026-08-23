@@ -49,6 +49,10 @@ jobs:
           java-version: "21"
           distribution: "temurin"
 
+      - name: Install build dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y gcc g++
+
       - name: Cache Gradle and Kotlin/Native
         uses: actions/cache@v4
         with:
