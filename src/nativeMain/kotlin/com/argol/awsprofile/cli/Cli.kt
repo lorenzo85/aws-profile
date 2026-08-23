@@ -55,6 +55,7 @@ class Cli(
         is CurrentCommand -> handleCurrent(command)
         is LoginCommand -> handleLogin(command)
         is ValidateCommand -> handleValidate(command)
+        is ResetCommand -> handleReset()
         is VersionCommand -> { output.info("aws-profile $APP_VERSION"); ExitCodes.SUCCESS }
         is HelpCommand -> { printHelp(); ExitCodes.SUCCESS }
     }
@@ -116,6 +117,16 @@ class Cli(
         return ExitCodes.SUCCESS
     }
 
+    private fun handleReset(): Int {
+        val switcher = ProfileSwitcher(configurationRepository, awsConfigRepository)
+        val profiles = switcher.resetAll()
+        output.info("Reset ${profiles.size} profile(s) to standing access.")
+        profiles.sortedBy { it.name }.forEach { profile ->
+            output.info("  ✓ ${profile.name}  →  ${profile.roleName}")
+        }
+        return ExitCodes.SUCCESS
+    }
+
     private fun handleLogin(command: LoginCommand): Int {
         output.info("Starting AWS SSO login for profile '${command.profileName}'...")
         return loginService.login(command.profileName).fold(
@@ -161,7 +172,7 @@ class Cli(
 
     private fun printCurrentProfile(profile: AwsProfile, config: AppConfig) {
         val standingRole = config.standingPermissionSet.value
-        val elevatedRole = config.elevatedPermissionSet.value
+        val elevatedRole = config.elevatedPermissionSet?.value
         val level = when (profile.roleName) {
             standingRole -> "STANDING"
             elevatedRole -> "ELEVATED"
@@ -190,6 +201,7 @@ class Cli(
               aws-profile current <account>  Show a specific profile
               aws-profile login <account>    Run 'aws sso login --profile <account>'
               aws-profile validate <account> Validate local configuration
+              aws-profile reset              Reset all profiles to standing access
               aws-profile version            Show version
               aws-profile --help             Show this help
 

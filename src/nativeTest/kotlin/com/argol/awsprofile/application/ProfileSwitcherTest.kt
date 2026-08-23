@@ -28,7 +28,7 @@ class FakeAwsConfigRepository : AwsConfigRepository {
 private fun makeConfig(vararg accounts: Pair<String, String>) = AppConfig(
     ssoSession = "company",
     standingPermissionSet = PermissionSetName("Terraform"),
-    elevatedPermissionSet = PermissionSetName("TerraformElevated"),
+    elevatedPermissionSet = PermissionSetName("TerraformElevated"),  // present by default
     accounts = accounts.associate { (alias, id) ->
         alias to Account(alias = alias, accountId = id, region = "eu-west-1")
     }
@@ -123,8 +123,51 @@ class ProfileSwitcherTest {
 
     @Test
     fun `unconfigured non-target accounts default to standing`() {
-        // prod-2 has never been written — should appear with standing access
         switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
+    }
+
+    @Test
+    fun `elevating an account with no elevated permission set throws ConfigurationError`() {
+        val standingOnlyConfig = AppConfig(
+            ssoSession = "company",
+            standingPermissionSet = PermissionSetName("Terraform"),
+            elevatedPermissionSet = null,
+            accounts = mapOf("prod-1" to Account("prod-1", "111111111111", "eu-west-1"))
+        )
+        val s = ProfileSwitcher(FakeConfigurationRepository(standingOnlyConfig), FakeAwsConfigRepository())
+        assertFailsWith<com.argol.awsprofile.errors.ConfigurationError> {
+            s.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        }
+    }
+
+    @Test
+    fun `per-account elevated override is used when present`() {
+        val configWithOverride = AppConfig(
+            ssoSession = "company",
+            standingPermissionSet = PermissionSetName("Terraform"),
+            elevatedPermissionSet = PermissionSetName("TerraformElevated"),
+            accounts = mapOf(
+                "prod-1" to Account(
+                    alias = "prod-1",
+                    accountId = "111111111111",
+                    region = "eu-west-1",
+                    elevatedPermissionSet = PermissionSetName("InfraOperatorAdmin")
+                )
+            )
+        )
+        val repo = FakeAwsConfigRepository()
+        ProfileSwitcher(FakeConfigurationRepository(configWithOverride), repo)
+            .switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        assertEquals("InfraOperatorAdmin", repo.profiles["prod-1"]?.roleName)
+    }
+
+    @Test
+    fun `resetAll sets all accounts to standing`() {
+        switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        switcher.switch(ProfileSelection("prod-2", AccessLevel.ELEVATED))
+        switcher.resetAll()
+        assertEquals("Terraform", awsRepo.profiles["prod-1"]?.roleName)
         assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
     }
 }

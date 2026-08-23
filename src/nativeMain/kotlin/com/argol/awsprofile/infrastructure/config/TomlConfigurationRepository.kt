@@ -41,8 +41,7 @@ class TomlConfigurationRepository(
             ?: throw ConfigurationError("Missing [permission_sets] section in configuration")
         val standing = permSection["standing"]
             ?: throw ConfigurationError("Missing permission_sets.standing in configuration")
-        val elevated = permSection["elevated"]
-            ?: throw ConfigurationError("Missing permission_sets.elevated in configuration")
+        val elevated = permSection["elevated"]   // optional — null means no global elevated access
 
         val accounts = sections
             .filterKeys { it.startsWith("accounts.") }
@@ -72,7 +71,7 @@ class TomlConfigurationRepository(
         return AppConfig(
             ssoSession = ssoSession,
             standingPermissionSet = PermissionSetName(standing),
-            elevatedPermissionSet = PermissionSetName(elevated),
+            elevatedPermissionSet = elevated?.let { PermissionSetName(it) },
             accounts = accounts
         )
     }

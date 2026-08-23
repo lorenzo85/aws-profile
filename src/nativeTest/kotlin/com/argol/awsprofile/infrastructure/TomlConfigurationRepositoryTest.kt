@@ -41,7 +41,7 @@ class TomlConfigurationRepositoryTest {
         val config = repo.parse(validToml)
         assertEquals("company", config.ssoSession)
         assertEquals("Terraform", config.standingPermissionSet.value)
-        assertEquals("TerraformElevated", config.elevatedPermissionSet.value)
+        assertEquals("TerraformElevated", config.elevatedPermissionSet?.value)
         assertEquals(3, config.accounts.size)
     }
 
@@ -86,6 +86,46 @@ class TomlConfigurationRepositoryTest {
             region = "eu-west-1"
         """.trimIndent()
         assertFailsWith<ConfigurationError> { repo.parse(toml) }
+    }
+
+    @Test
+    fun `elevated is optional in permission_sets`() {
+        val toml = """
+            [sso]
+            session = "company"
+
+            [permission_sets]
+            standing = "Terraform"
+
+            [accounts.prod-1]
+            account_id = "111111111111"
+            region = "eu-west-1"
+        """.trimIndent()
+        val config = repo.parse(toml)
+        assertEquals("Terraform", config.standingPermissionSet.value)
+        assertEquals(null, config.elevatedPermissionSet)
+    }
+
+    @Test
+    fun `per-account standing and elevated overrides are parsed`() {
+        val toml = """
+            [sso]
+            session = "company"
+
+            [permission_sets]
+            standing = "Terraform"
+            elevated = "TerraformElevated"
+
+            [accounts.legacy-1]
+            account_id = "999999999999"
+            region = "eu-west-1"
+            standing = "InfraOperator"
+            elevated = "InfraOperatorAdmin"
+        """.trimIndent()
+        val config = repo.parse(toml)
+        val account = config.resolve("legacy-1")!!
+        assertEquals("InfraOperator", account.standingPermissionSet?.value)
+        assertEquals("InfraOperatorAdmin", account.elevatedPermissionSet?.value)
     }
 
     @Test
