@@ -32,6 +32,7 @@ interface UserDirectories {
 }
 
 class NativeUserDirectories : UserDirectories {
+    @OptIn(ExperimentalForeignApi::class)
     override fun home(): Path {
         val home = getenv("HOME")?.toKString()
             ?: throw ConfigurationError("HOME environment variable is not set")
@@ -50,6 +51,7 @@ class NativeFileSystem : FileSystem {
     override fun read(path: Path): String =
         readOrNull(path) ?: throw ConfigurationError("Cannot read file: ${path.value}")
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun readOrNull(path: Path): String? {
         val file = fopen(path.value, "r") ?: return null
         val content = StringBuilder()
@@ -67,6 +69,7 @@ class NativeFileSystem : FileSystem {
         return content.toString()
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun write(path: Path, content: String) {
         val file = fopen(path.value, "w")
             ?: throw AwsConfigError("Cannot write to file: ${path.value}")
@@ -90,11 +93,13 @@ class NativeFileSystem : FileSystem {
     }
 
     // Sets 0600 for files (owner read/write only) — always restrictive for sensitive config
+    @OptIn(UnsafeNumber::class, ExperimentalForeignApi::class)
     override fun setRestrictivePermissions(path: Path) {
         // 0600 = owner r/w only; convert<mode_t>() handles UShort/UInt difference across platforms
         chmod(path.value, 384u.convert())
     }
 
+    @OptIn(UnsafeNumber::class, ExperimentalForeignApi::class)
     private fun createDirectoriesRecursive(path: String) {
         if (path.isEmpty()) return
         val parts = path.trimStart('/').split("/")

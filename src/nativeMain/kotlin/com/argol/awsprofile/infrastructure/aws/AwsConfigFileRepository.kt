@@ -25,26 +25,32 @@ class AwsConfigFileRepository(
     }
 
     override fun upsertProfile(profile: AwsProfile) {
+        upsertProfiles(listOf(profile))
+    }
+
+    // Applies all profiles in a single read-modify-write cycle to avoid
+    // re-reading and re-writing the file once per account when syncing the full list.
+    override fun upsertProfiles(profiles: List<AwsProfile>) {
         ensureAwsDirectoryExists()
 
         val existing = fileSystem.readOrNull(configPath)
-        val doc = if (existing != null) {
+        var doc = if (existing != null) {
             AwsConfigParser.parse(existing)
         } else {
             AwsConfigDocument(emptyList())
         }
 
-        val updated = AwsConfigParser.upsert(doc, profile)
-        val content = AwsConfigParser.serialize(updated)
+        profiles.forEach { profile ->
+            doc = AwsConfigParser.upsert(doc, profile)
+        }
 
-        writeAtomically(configPath, content)
+        writeAtomically(configPath, AwsConfigParser.serialize(doc))
     }
 
     private fun writeAtomically(target: Path, content: String) {
         val temp = tempFilePath(target)
         try {
             fileSystem.write(temp, content)
-            // Always write config with restrictive permissions (0600 = owner r/w only)
             fileSystem.setRestrictivePermissions(temp)
             fileSystem.move(temp, target)
         } catch (e: Exception) {

@@ -35,10 +35,7 @@ class InMemoryFileSystem : FileSystem {
         files[target.value] = content
     }
 
-    override fun createDirectories(path: Path) {
-        directories.add(path.value)
-    }
-
+    override fun createDirectories(path: Path) { directories.add(path.value) }
     override fun setRestrictivePermissions(path: Path) {}
 }
 

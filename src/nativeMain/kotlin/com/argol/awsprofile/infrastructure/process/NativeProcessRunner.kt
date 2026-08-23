@@ -5,6 +5,7 @@ import com.argol.awsprofile.ports.ProcessRunner
 import kotlinx.cinterop.*
 import platform.posix.*
 
+@ExperimentalForeignApi
 class NativeProcessRunner : ProcessRunner {
 
     override fun run(command: String, arguments: List<String>): ProcessResult {

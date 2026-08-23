@@ -19,9 +19,8 @@ class FakeAwsConfigRepository : AwsConfigRepository {
     val profiles = mutableMapOf<String, AwsProfile>()
 
     override fun getProfile(name: String): AwsProfile? = profiles[name]
-    override fun upsertProfile(profile: AwsProfile) {
-        profiles[profile.name] = profile
-    }
+    override fun upsertProfile(profile: AwsProfile) { profiles[profile.name] = profile }
+    override fun upsertProfiles(profiles: List<AwsProfile>) { profiles.forEach { upsertProfile(it) } }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -98,6 +97,25 @@ class ProfileSwitcherTest {
     fun `switching different accounts does not overwrite each other`() {
         switcher.switch(ProfileSelection("prod-1", AccessLevel.STANDING))
         switcher.switch(ProfileSelection("prod-2", AccessLevel.ELEVATED))
+        assertEquals("Terraform", awsRepo.profiles["prod-1"]?.roleName)
+        assertEquals("TerraformElevated", awsRepo.profiles["prod-2"]?.roleName)
+    }
+
+    @Test
+    fun `all accounts are written on every switch`() {
+        switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        // prod-2 must also be present even though it was not the target
+        assertNotNull(awsRepo.profiles["prod-2"])
+        assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
+    }
+
+    @Test
+    fun `non-target accounts always get standing access`() {
+        switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
+
+        switcher.switch(ProfileSelection("prod-2", AccessLevel.ELEVATED))
+        // prod-1 reverts to standing when prod-2 is the target
         assertEquals("Terraform", awsRepo.profiles["prod-1"]?.roleName)
         assertEquals("TerraformElevated", awsRepo.profiles["prod-2"]?.roleName)
     }
