@@ -104,19 +104,27 @@ class ProfileSwitcherTest {
     @Test
     fun `all accounts are written on every switch`() {
         switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
-        // prod-2 must also be present even though it was not the target
+        // prod-2 must also be present, defaulting to standing as it was not previously configured
         assertNotNull(awsRepo.profiles["prod-2"])
         assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
     }
 
     @Test
-    fun `non-target accounts always get standing access`() {
+    fun `non-target accounts preserve their existing role`() {
+        // Elevate prod-2 first
+        switcher.switch(ProfileSelection("prod-2", AccessLevel.ELEVATED))
+        assertEquals("TerraformElevated", awsRepo.profiles["prod-2"]?.roleName)
+
+        // Switching prod-1 must NOT reset prod-2 back to standing
+        switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
+        assertEquals("TerraformElevated", awsRepo.profiles["prod-1"]?.roleName)
+        assertEquals("TerraformElevated", awsRepo.profiles["prod-2"]?.roleName)
+    }
+
+    @Test
+    fun `unconfigured non-target accounts default to standing`() {
+        // prod-2 has never been written — should appear with standing access
         switcher.switch(ProfileSelection("prod-1", AccessLevel.ELEVATED))
         assertEquals("Terraform", awsRepo.profiles["prod-2"]?.roleName)
-
-        switcher.switch(ProfileSelection("prod-2", AccessLevel.ELEVATED))
-        // prod-1 reverts to standing when prod-2 is the target
-        assertEquals("Terraform", awsRepo.profiles["prod-1"]?.roleName)
-        assertEquals("TerraformElevated", awsRepo.profiles["prod-2"]?.roleName)
     }
 }

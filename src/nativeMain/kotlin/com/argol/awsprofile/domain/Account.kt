@@ -5,7 +5,9 @@ import com.argol.awsprofile.errors.ValidationError
 data class Account(
     val alias: String,
     val accountId: String,
-    val region: String
+    val region: String,
+    val standingPermissionSet: PermissionSetName? = null,  // overrides global if set
+    val elevatedPermissionSet: PermissionSetName? = null   // overrides global if set
 ) {
     init {
         if (!accountId.matches(Regex("\\d{12}"))) {

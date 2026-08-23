@@ -87,13 +87,11 @@ object AwsConfigParser {
     }
 
     private fun profileBody(profile: AwsProfile): String = buildString {
-        appendLine("#### DO NOT TOUCH - managed by aws-profile ####")
         appendLine("sso_session = ${profile.ssoSession}")
         appendLine("sso_account_id = ${profile.accountId}")
         appendLine("sso_role_name = ${profile.roleName}")
         appendLine("region = ${profile.region}")
         appendLine("output = ${profile.output}")
-        appendLine("#### END aws-profile ####")
     }
 
     private fun parseEntries(body: String): Map<String, String> {

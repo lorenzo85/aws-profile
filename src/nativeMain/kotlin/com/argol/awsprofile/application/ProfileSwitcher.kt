@@ -14,23 +14,35 @@ class ProfileSwitcher(
     fun switch(selection: ProfileSelection): AwsProfile {
         val config = configurationRepository.load()
 
-        if (config.resolve(selection.accountAlias) == null) {
-            throw AccountNotFoundError(selection.accountAlias)
-        }
+        val account = config.resolve(selection.accountAlias)
+            ?: throw AccountNotFoundError(selection.accountAlias)
 
-        // Build a profile for every account in the TOML config.
-        // The target account gets the requested access level; all others get standing.
-        // Written in a single atomic pass so ~/.aws/config always mirrors the full config.
-        val profiles = config.accounts.values.map { account ->
-            val level = if (account.alias == selection.accountAlias) selection.accessLevel
-                        else AccessLevel.STANDING
-            AwsProfile(
-                name = account.alias,
-                ssoSession = config.ssoSession,
-                accountId = account.accountId,
-                roleName = config.permissionSet(level).value,
-                region = account.region
-            )
+        // Build profiles for all accounts defined in the TOML config so that
+        // ~/.aws/config always contains the full set. For accounts that are
+        // already present in ~/.aws/config their existing role name is preserved,
+        // allowing multiple accounts to be elevated independently. Accounts that
+        // are not yet present are initialised with standing access.
+        val profiles = config.accounts.values.map { acc ->
+            if (acc.alias == selection.accountAlias) {
+                AwsProfile(
+                    name = acc.alias,
+                    ssoSession = config.ssoSession,
+                    accountId = acc.accountId,
+                    roleName = config.permissionSet(acc, selection.accessLevel).value,
+                    region = acc.region
+                )
+            } else {
+                // Keep existing role if the account is already configured,
+                // otherwise default to the effective standing permission set for that account.
+                val existing = awsConfigRepository.getProfile(acc.alias)
+                AwsProfile(
+                    name = acc.alias,
+                    ssoSession = config.ssoSession,
+                    accountId = acc.accountId,
+                    roleName = existing?.roleName ?: config.permissionSet(acc, AccessLevel.STANDING).value,
+                    region = acc.region
+                )
+            }
         }
 
         awsConfigRepository.upsertProfiles(profiles)

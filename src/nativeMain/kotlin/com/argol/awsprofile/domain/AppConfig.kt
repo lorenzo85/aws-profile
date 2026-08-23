@@ -8,6 +8,14 @@ data class AppConfig(
 ) {
     fun resolve(alias: String): Account? = accounts[alias]
 
+    // Returns the effective permission set for a given account and access level.
+    // Per-account overrides take precedence over the global permission_sets.
+    fun permissionSet(account: Account, level: AccessLevel): PermissionSetName = when (level) {
+        AccessLevel.STANDING -> account.standingPermissionSet ?: standingPermissionSet
+        AccessLevel.ELEVATED -> account.elevatedPermissionSet ?: elevatedPermissionSet
+    }
+
+    // Convenience overload using the global sets (no per-account override).
     fun permissionSet(level: AccessLevel): PermissionSetName = when (level) {
         AccessLevel.STANDING -> standingPermissionSet
         AccessLevel.ELEVATED -> elevatedPermissionSet

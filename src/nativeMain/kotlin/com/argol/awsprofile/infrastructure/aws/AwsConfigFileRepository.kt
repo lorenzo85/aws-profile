@@ -8,6 +8,9 @@ import com.argol.awsprofile.infrastructure.filesystem.UserDirectories
 import com.argol.awsprofile.infrastructure.filesystem.tempFilePath
 import com.argol.awsprofile.ports.AwsConfigRepository
 
+private const val MARKER_BEGIN = "#### DO NOT TOUCH - managed by aws-profile ####"
+private const val MARKER_END   = "#### END aws-profile ####"
+
 class AwsConfigFileRepository(
     private val fileSystem: FileSystem,
     private val userDirectories: UserDirectories
@@ -28,23 +31,41 @@ class AwsConfigFileRepository(
         upsertProfiles(listOf(profile))
     }
 
-    // Applies all profiles in a single read-modify-write cycle to avoid
-    // re-reading and re-writing the file once per account when syncing the full list.
     override fun upsertProfiles(profiles: List<AwsProfile>) {
         ensureAwsDirectoryExists()
 
         val existing = fileSystem.readOrNull(configPath)
-        var doc = if (existing != null) {
-            AwsConfigParser.parse(existing)
-        } else {
-            AwsConfigDocument(emptyList())
-        }
+        var doc = if (existing != null) AwsConfigParser.parse(existing)
+                  else AwsConfigDocument(emptyList())
 
-        profiles.forEach { profile ->
-            doc = AwsConfigParser.upsert(doc, profile)
-        }
+        profiles.forEach { doc = AwsConfigParser.upsert(doc, it) }
 
-        writeAtomically(configPath, AwsConfigParser.serialize(doc))
+        val managedHeaders = profiles.map { "profile ${it.name}" }.toSet()
+        writeAtomically(configPath, serializeWithMarkers(doc, managedHeaders))
+    }
+
+    private fun serializeWithMarkers(doc: AwsConfigDocument, managedHeaders: Set<String>): String {
+        val unmanaged = doc.sections.filter { it.header !in managedHeaders }
+        val managed   = doc.sections.filter { it.header in managedHeaders }
+
+        return buildString {
+            unmanaged.forEachIndexed { i, section ->
+                if (i > 0) append("\n")
+                appendLine("[${section.header}]")
+                append(section.body)
+            }
+
+            if (managed.isNotEmpty()) {
+                if (unmanaged.isNotEmpty()) append("\n")
+                appendLine(MARKER_BEGIN)
+                managed.forEachIndexed { i, section ->
+                    if (i > 0) append("\n")
+                    appendLine("[${section.header}]")
+                    append(section.body)
+                }
+                append(MARKER_END).append("\n")
+            }
+        }
     }
 
     private fun writeAtomically(target: Path, content: String) {
@@ -60,8 +81,6 @@ class AwsConfigFileRepository(
 
     private fun ensureAwsDirectoryExists() {
         val dir = userDirectories.awsDirectory()
-        if (!fileSystem.exists(dir)) {
-            fileSystem.createDirectories(dir)
-        }
+        if (!fileSystem.exists(dir)) fileSystem.createDirectories(dir)
     }
 }

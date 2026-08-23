@@ -53,7 +53,15 @@ class TomlConfigurationRepository(
                     ?: throw ConfigurationError("Missing account_id for [$key]")
                 val region = values["region"]
                     ?: throw ConfigurationError("Missing region for [$key]")
-                alias to Account(alias = alias, accountId = accountId, region = region)
+                val accountStanding = values["standing"]?.let { PermissionSetName(it) }
+                val accountElevated = values["elevated"]?.let { PermissionSetName(it) }
+                alias to Account(
+                    alias = alias,
+                    accountId = accountId,
+                    region = region,
+                    standingPermissionSet = accountStanding,
+                    elevatedPermissionSet = accountElevated
+                )
             }
             .toMap()
 
