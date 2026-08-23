@@ -27,7 +27,7 @@ prod-1+            prod-1            TerraformElevated
 ## Installation
 
 ```bash
-brew install argol/tap/aws-profile
+brew install lorenzo85/tap/aws-profile
 ```
 
 ---
@@ -183,7 +183,7 @@ Writes are atomic: a temporary file is written and renamed over the target.
 Build the binary directly from source and run it:
 
 ```bash
-git clone https://github.com/argol/aws-profile
+git clone https://github.com/lorenzo85/aws-profile
 cd aws-profile
 
 ./gradlew linkReleaseExecutableMacosArm64
@@ -301,7 +301,7 @@ Build a specific target:
 
 ```bash
 # From the aws-profile directory
-gh repo create argol/aws-profile \
+gh repo create lorenzo85/aws-profile \
   --public \
   --source=. \
   --remote=origin \
@@ -309,7 +309,7 @@ gh repo create argol/aws-profile \
 
 # From the homebrew-tap directory
 cd ../homebrew-tap
-gh repo create argol/homebrew-tap \
+gh repo create lorenzo85/homebrew-tap \
   --public \
   --source=. \
   --remote=origin \
@@ -318,7 +318,7 @@ gh repo create argol/homebrew-tap \
 
 ### 2. Add the required secret
 
-Go to **`argol/aws-profile` → Settings → Secrets and variables → Actions** and create:
+Go to **`lorenzo85/aws-profile` → Settings → Secrets and variables → Actions** and create:
 
 | Secret name | Value |
 |-------------|-------|
@@ -326,7 +326,7 @@ Go to **`argol/aws-profile` → Settings → Secrets and variables → Actions**
 
 Create the token at **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**:
 
-- Resource owner: `argol`
+- Resource owner: `lorenzo85`
 - Repository access: **Only selected repositories** → `homebrew-tap`
 - Permissions → Contents: **Read and write**
 
@@ -353,15 +353,15 @@ GitHub Actions (4 parallel jobs)
       ↓
 GitHub Release (with checksums.txt)
       ↓
-argol/homebrew-tap updated automatically
+lorenzo85/homebrew-tap updated automatically
       ↓
-brew install argol/tap/aws-profile
+brew install lorenzo85/tap/aws-profile
 ```
 
 ### 4. Install via Homebrew
 
 ```bash
-brew install argol/tap/aws-profile
+brew install lorenzo85/tap/aws-profile
 aws-profile --version
 ```
 
@@ -371,7 +371,7 @@ aws-profile --version
 
 No manual steps are needed. Every time you push a new tag (`v0.2.0`, `v1.0.0`, etc.),
 the release workflow recalculates the SHA-256 checksums from the fresh artifacts and
-commits the updated formula to `argol/homebrew-tap`. Homebrew users get the new version
+commits the updated formula to `lorenzo85/homebrew-tap`. Homebrew users get the new version
 on their next `brew upgrade`.
 
 ---

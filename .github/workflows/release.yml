@@ -129,7 +129,7 @@ jobs:
 
             ### Install via Homebrew
             ```bash
-            brew install argol/tap/aws-profile
+            brew install lorenzo85/tap/aws-profile
             ```
 
             ### Manual install
@@ -176,7 +176,7 @@ jobs:
       - name: Clone homebrew-tap
         run: |
           git clone \
-            "https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/argol/homebrew-tap.git" \
+            "https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/lorenzo85/homebrew-tap.git" \
             tap
           mkdir -p tap/Formula
 
@@ -191,26 +191,26 @@ jobs:
           cat > tap/Formula/aws-profile.rb << FORMULA
           class AwsProfile < Formula
             desc "AWS IAM Identity Center profile switcher for infrastructure operators"
-            homepage "https://github.com/argol/aws-profile"
+            homepage "https://github.com/lorenzo85/aws-profile"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-arm64.tar.gz"
+                url "https://github.com/lorenzo85/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-arm64.tar.gz"
                 sha256 "${DARWIN_ARM64_SHA}"
               else
-                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-amd64.tar.gz"
+                url "https://github.com/lorenzo85/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-amd64.tar.gz"
                 sha256 "${DARWIN_AMD64_SHA}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-linux-arm64.tar.gz"
+                url "https://github.com/lorenzo85/aws-profile/releases/download/v${VERSION}/aws-profile-linux-arm64.tar.gz"
                 sha256 "${LINUX_ARM64_SHA}"
               else
-                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-linux-amd64.tar.gz"
+                url "https://github.com/lorenzo85/aws-profile/releases/download/v${VERSION}/aws-profile-linux-amd64.tar.gz"
                 sha256 "${LINUX_AMD64_SHA}"
               end
             end
