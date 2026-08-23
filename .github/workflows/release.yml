@@ -34,7 +34,7 @@ jobs:
             artifact: aws-profile-linux-amd64
             binary_path: build/bin/linuxX64/releaseExecutable/aws-profile.kexe
 
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-latest
             target: linuxArm64
             task: linkReleaseExecutableLinuxArm64
             artifact: aws-profile-linux-arm64
@@ -51,7 +51,11 @@ jobs:
 
       - name: Install build dependencies (Linux only)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y gcc g++
+        run: |
+          sudo apt-get install -y gcc g++
+          if [ "${{ matrix.target }}" = "linuxArm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
 
       - name: Cache Gradle and Kotlin/Native
         uses: actions/cache@v4
@@ -65,7 +69,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-gradle-
 
       - name: Build release executable
-        run: ./gradlew ${{ matrix.task }} --no-daemon -Pkotlin.native.ignoreDisabledTargets=false --info 2>&1 | tail -100
+        run: ./gradlew ${{ matrix.task }} --no-daemon -Pkotlin.native.ignoreDisabledTargets=false
 
       - name: Rename binary
         run: |
