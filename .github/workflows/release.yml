@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macosArm64
+            task: linkReleaseExecutableMacosArm64
+            artifact: aws-profile-darwin-arm64
+            binary_path: build/bin/macosArm64/releaseExecutable/aws-profile.kexe
+
+          - os: macos-13
+            target: macosX64
+            task: linkReleaseExecutableMacosX64
+            artifact: aws-profile-darwin-amd64
+            binary_path: build/bin/macosX64/releaseExecutable/aws-profile.kexe
+
+          - os: ubuntu-latest
+            target: linuxX64
+            task: linkReleaseExecutableLinuxX64
+            artifact: aws-profile-linux-amd64
+            binary_path: build/bin/linuxX64/releaseExecutable/aws-profile.kexe
+
+          - os: ubuntu-24.04-arm
+            target: linuxArm64
+            task: linkReleaseExecutableLinuxArm64
+            artifact: aws-profile-linux-arm64
+            binary_path: build/bin/linuxArm64/releaseExecutable/aws-profile.kexe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Cache Gradle and Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-${{ matrix.target }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-gradle-
+
+      - name: Build release executable
+        run: ./gradlew ${{ matrix.task }} --no-daemon
+
+      - name: Rename binary
+        run: |
+          cp "${{ matrix.binary_path }}" aws-profile
+          chmod +x aws-profile
+
+      - name: Create archive
+        run: |
+          tar czf "${{ matrix.artifact }}.tar.gz" aws-profile LICENSE README.md
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract tag name
+        id: tag
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          find artifacts/ -name "*.tar.gz" -exec mv {} . \;
+          ls -la *.tar.gz
+
+      - name: Generate checksums
+        run: |
+          sha256sum aws-profile-darwin-arm64.tar.gz \
+                    aws-profile-darwin-amd64.tar.gz \
+                    aws-profile-linux-arm64.tar.gz \
+                    aws-profile-linux-amd64.tar.gz \
+            > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "aws-profile ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## aws-profile ${{ steps.tag.outputs.tag }}
+
+            AWS IAM Identity Center profile switcher for infrastructure operators.
+
+            ### Platforms
+            | Platform      | Architecture | File |
+            |---------------|-------------|------|
+            | macOS         | ARM64 (Apple Silicon) | `aws-profile-darwin-arm64.tar.gz` |
+            | macOS         | x86_64                | `aws-profile-darwin-amd64.tar.gz` |
+            | Linux         | x86_64                | `aws-profile-linux-amd64.tar.gz`  |
+            | Linux         | ARM64                 | `aws-profile-linux-arm64.tar.gz`  |
+
+            ### Install via Homebrew
+            ```bash
+            brew install argol/tap/aws-profile
+            ```
+
+            ### Manual install
+            Download the archive for your platform, extract, and place `aws-profile` in your `$PATH`.
+
+            ### Verify
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+          files: |
+            aws-profile-darwin-arm64.tar.gz
+            aws-profile-darwin-amd64.tar.gz
+            aws-profile-linux-arm64.tar.gz
+            aws-profile-linux-amd64.tar.gz
+            checksums.txt
+          fail_on_unmatched_files: true
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          find artifacts/ -name "*.tar.gz" -exec mv {} . \;
+
+      - name: Calculate SHA-256 checksums
+        id: checksums
+        run: |
+          echo "darwin_arm64=$(sha256sum aws-profile-darwin-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "darwin_amd64=$(sha256sum aws-profile-darwin-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(sha256sum aws-profile-linux-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(sha256sum aws-profile-linux-amd64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Clone homebrew-tap
+        run: |
+          git clone \
+            "https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/argol/homebrew-tap.git" \
+            tap
+          mkdir -p tap/Formula
+
+      - name: Generate Formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DARWIN_ARM64_SHA: ${{ steps.checksums.outputs.darwin_arm64 }}
+          DARWIN_AMD64_SHA: ${{ steps.checksums.outputs.darwin_amd64 }}
+          LINUX_ARM64_SHA: ${{ steps.checksums.outputs.linux_arm64 }}
+          LINUX_AMD64_SHA: ${{ steps.checksums.outputs.linux_amd64 }}
+        run: |
+          cat > tap/Formula/aws-profile.rb << FORMULA
+          class AwsProfile < Formula
+            desc "AWS IAM Identity Center profile switcher for infrastructure operators"
+            homepage "https://github.com/argol/aws-profile"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-arm64.tar.gz"
+                sha256 "${DARWIN_ARM64_SHA}"
+              else
+                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-darwin-amd64.tar.gz"
+                sha256 "${DARWIN_AMD64_SHA}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-linux-arm64.tar.gz"
+                sha256 "${LINUX_ARM64_SHA}"
+              else
+                url "https://github.com/argol/aws-profile/releases/download/v${VERSION}/aws-profile-linux-amd64.tar.gz"
+                sha256 "${LINUX_AMD64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "aws-profile"
+            end
+
+            test do
+              output = shell_output("#{bin}/aws-profile --version").strip
+              assert_match version.to_s, output
+            end
+          end
+          FORMULA
+
+      - name: Commit and push formula
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/aws-profile.rb
+          git commit -m "Update aws-profile to v${{ steps.version.outputs.version }}"
+          git push
