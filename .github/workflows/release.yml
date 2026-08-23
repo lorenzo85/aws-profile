@@ -22,7 +22,7 @@ jobs:
             artifact: aws-profile-darwin-arm64
             binary_path: build/bin/macosArm64/releaseExecutable/aws-profile.kexe
 
-          - os: macos-13
+          - os: macos-14
             target: macosX64
             task: linkReleaseExecutableMacosX64
             artifact: aws-profile-darwin-amd64
