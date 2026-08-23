@@ -65,7 +65,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-gradle-
 
       - name: Build release executable
-        run: ./gradlew ${{ matrix.task }} --no-daemon
+        run: ./gradlew ${{ matrix.task }} --no-daemon -Pkotlin.native.ignoreDisabledTargets=false --info 2>&1 | tail -100
 
       - name: Rename binary
         run: |
