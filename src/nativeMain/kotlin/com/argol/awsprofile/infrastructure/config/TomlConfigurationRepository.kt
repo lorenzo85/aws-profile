@@ -17,6 +17,15 @@ class TomlConfigurationRepository(
     private val configPath: Path
         get() = userDirectories.configDirectory() / "config.toml"
 
+    override fun exists(): Boolean = fileSystem.exists(configPath)
+
+    override fun write(content: String) {
+        val dir = userDirectories.configDirectory()
+        if (!fileSystem.exists(dir)) fileSystem.createDirectories(dir)
+        fileSystem.write(configPath, content)
+        fileSystem.setRestrictivePermissions(configPath)
+    }
+
     override fun load(): AppConfig {
         val path = configPath
         if (!fileSystem.exists(path)) {

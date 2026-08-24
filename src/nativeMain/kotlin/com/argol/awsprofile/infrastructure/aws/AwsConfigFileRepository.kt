@@ -1,6 +1,7 @@
 package com.argol.awsprofile.infrastructure.aws
 
 import com.argol.awsprofile.domain.AwsProfile
+import com.argol.awsprofile.domain.DiscoveredSsoProfile
 import com.argol.awsprofile.errors.AwsConfigError
 import com.argol.awsprofile.infrastructure.filesystem.FileSystem
 import com.argol.awsprofile.infrastructure.filesystem.Path
@@ -77,6 +78,11 @@ class AwsConfigFileRepository(
         } catch (e: Exception) {
             throw AwsConfigError("Failed to update AWS config: ${e.message}")
         }
+    }
+
+    override fun listSsoProfiles(): List<DiscoveredSsoProfile> {
+        val text = fileSystem.readOrNull(configPath) ?: return emptyList()
+        return AwsConfigParser.parse(text).sections.mapNotNull { AwsConfigParser.extractSsoProfile(it) }
     }
 
     private fun ensureAwsDirectoryExists() {

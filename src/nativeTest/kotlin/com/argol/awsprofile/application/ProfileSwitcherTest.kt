@@ -1,6 +1,7 @@
 package com.argol.awsprofile.application
 
 import com.argol.awsprofile.domain.*
+import com.argol.awsprofile.domain.DiscoveredSsoProfile
 import com.argol.awsprofile.errors.AccountNotFoundError
 import com.argol.awsprofile.ports.AwsConfigRepository
 import com.argol.awsprofile.ports.ConfigurationRepository
@@ -13,6 +14,8 @@ import kotlin.test.assertNotNull
 
 class FakeConfigurationRepository(private val config: AppConfig) : ConfigurationRepository {
     override fun load(): AppConfig = config
+    override fun exists(): Boolean = true
+    override fun write(content: String) {}
 }
 
 class FakeAwsConfigRepository : AwsConfigRepository {
@@ -21,6 +24,7 @@ class FakeAwsConfigRepository : AwsConfigRepository {
     override fun getProfile(name: String): AwsProfile? = profiles[name]
     override fun upsertProfile(profile: AwsProfile) { profiles[profile.name] = profile }
     override fun upsertProfiles(profiles: List<AwsProfile>) { profiles.forEach { upsertProfile(it) } }
+    override fun listSsoProfiles(): List<DiscoveredSsoProfile> = emptyList()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

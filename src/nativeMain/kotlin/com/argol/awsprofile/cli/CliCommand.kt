@@ -11,5 +11,6 @@ data class CurrentCommand(val profileName: String? = null) : CliCommand
 data class LoginCommand(val profileName: String) : CliCommand
 data class ValidateCommand(val profileName: String) : CliCommand
 data object ResetCommand : CliCommand
+data object InitCommand : CliCommand
 data object VersionCommand : CliCommand
 data object HelpCommand : CliCommand

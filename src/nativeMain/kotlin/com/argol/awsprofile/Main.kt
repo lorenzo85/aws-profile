@@ -9,8 +9,10 @@ import com.argol.awsprofile.infrastructure.config.TomlConfigurationRepository
 import com.argol.awsprofile.infrastructure.filesystem.NativeFileSystem
 import com.argol.awsprofile.infrastructure.filesystem.NativeUserDirectories
 import com.argol.awsprofile.infrastructure.process.NativeProcessRunner
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlin.system.exitProcess
 
+@OptIn(ExperimentalForeignApi::class)
 fun main(args: Array<String>) {
     val fileSystem = NativeFileSystem()
     val userDirectories = NativeUserDirectories()

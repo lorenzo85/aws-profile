@@ -24,6 +24,7 @@ class CliParser {
                 LoginCommand(profile)
             }
             "reset" -> ResetCommand
+            "init" -> InitCommand
             "validate" -> {
                 val profile = args.getOrNull(1)
                     ?: throw ValidationError("Usage: aws-profile validate <account>")

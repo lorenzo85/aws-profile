@@ -3,6 +3,7 @@ package com.argol.awsprofile.cli
 import com.argol.awsprofile.APP_VERSION
 import com.argol.awsprofile.application.AccountResolver
 import com.argol.awsprofile.application.CurrentProfileService
+import com.argol.awsprofile.application.InitService
 import com.argol.awsprofile.application.LoginService
 import com.argol.awsprofile.application.ProfileSwitcher
 import com.argol.awsprofile.domain.AccessLevel
@@ -56,6 +57,7 @@ class Cli(
         is LoginCommand -> handleLogin(command)
         is ValidateCommand -> handleValidate(command)
         is ResetCommand -> handleReset()
+        is InitCommand -> handleInit()
         is VersionCommand -> { output.info("aws-profile $APP_VERSION"); ExitCodes.SUCCESS }
         is HelpCommand -> { printHelp(); ExitCodes.SUCCESS }
     }
@@ -114,6 +116,15 @@ class Cli(
                 output.info("No managed profiles found in ~/.aws/config. Run 'aws-profile <account>' first.")
             }
         }
+        return ExitCodes.SUCCESS
+    }
+
+    private fun handleInit(): Int {
+        val service = InitService(awsConfigRepository, configurationRepository)
+        service.init()
+        output.success("Config written to ~/.config/aws-profile/config.toml")
+        output.info("Edit the file to set your permission set names, then run:")
+        output.info("  aws-profile list")
         return ExitCodes.SUCCESS
     }
 
@@ -193,6 +204,7 @@ class Cli(
             Manage AWS IAM Identity Center profiles for Terraform and the AWS CLI.
 
             USAGE:
+              aws-profile init               Generate config from existing SSO profiles
               aws-profile <account>          Switch to standing access
               aws-profile <account>+         Switch to elevated access
               aws-profile list               List configured accounts
