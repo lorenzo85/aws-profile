@@ -12,33 +12,24 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-// ─── In-memory filesystem for isolation ─────────────────────────────────────
+// ─── In-memory filesystem ────────────────────────────────────────────────────
 
 class InMemoryFileSystem : FileSystem {
     val files = mutableMapOf<String, String>()
     val directories = mutableSetOf<String>()
 
-    override fun exists(path: Path): Boolean =
-        files.containsKey(path.value) || directories.contains(path.value)
-
-    override fun read(path: Path): String =
-        files[path.value] ?: error("File not found: ${path.value}")
-
+    override fun exists(path: Path): Boolean = files.containsKey(path.value) || directories.contains(path.value)
+    override fun read(path: Path): String = files[path.value] ?: error("File not found: ${path.value}")
     override fun readOrNull(path: Path): String? = files[path.value]
-
-    override fun write(path: Path, content: String) {
-        files[path.value] = content
-    }
-
+    override fun write(path: Path, content: String) { files[path.value] = content }
     override fun move(source: Path, target: Path) {
-        val content = files.remove(source.value) ?: error("Source not found: ${source.value}")
-        files[target.value] = content
+        files[target.value] = files.remove(source.value) ?: error("Source not found: ${source.value}")
     }
-
     override fun createDirectories(path: Path) { directories.add(path.value) }
     override fun setRestrictivePermissions(path: Path) {}
     override fun listFiles(path: Path): List<Path> =
-        files.keys.filter { it.startsWith(path.value + "/") && !it.removePrefix(path.value + "/").contains("/") }
+        files.keys
+            .filter { it.startsWith(path.value + "/") && !it.removePrefix(path.value + "/").contains("/") }
             .map { Path(it) }
 }
 
@@ -54,143 +45,119 @@ class FakeUserDirectories(home: String = "/home/testuser") : UserDirectories {
 class AwsConfigFileRepositoryTest {
 
     private lateinit var fs: InMemoryFileSystem
-    private lateinit var dirs: FakeUserDirectories
     private lateinit var repo: AwsConfigFileRepository
+
+    private val configPath = "/home/testuser/.aws/config"
+
+    private val existingConfig = """
+        [default]
+        region = eu-west-1
+
+        [profile prod-1]
+        sso_session = company
+        sso_account_id = 111111111111
+        sso_role_name = Terraform
+        region = eu-west-1
+        output = json
+
+        [profile prod-2]
+        sso_session = company
+        sso_account_id = 222222222222
+        sso_role_name = Terraform
+        region = eu-west-1
+        output = json
+    """.trimIndent()
 
     @BeforeTest
     fun setup() {
         fs = InMemoryFileSystem()
-        dirs = FakeUserDirectories()
-        repo = AwsConfigFileRepository(fs, dirs)
+        repo = AwsConfigFileRepository(fs, FakeUserDirectories())
+        fs.files[configPath] = existingConfig
     }
 
-    private val sampleProfile = AwsProfile(
-        name = "prod-1",
-        ssoSession = "company",
-        accountId = "111111111111",
-        roleName = "Terraform",
-        region = "eu-west-1"
-    )
-
-    private val elevatedProfile = sampleProfile.copy(roleName = "TerraformElevated")
+    @Test
+    fun `getProfile returns profile from existing config`() {
+        val profile = repo.getProfile("prod-1")
+        assertNotNull(profile)
+        assertEquals("prod-1", profile.name)
+        assertEquals("Terraform", profile.roleName)
+        assertEquals("111111111111", profile.accountId)
+        assertEquals("eu-west-1", profile.region)
+    }
 
     @Test
     fun `getProfile returns null when config file does not exist`() {
+        fs.files.remove(configPath)
         assertNull(repo.getProfile("prod-1"))
     }
 
     @Test
-    fun `upsertProfile creates aws config when it does not exist`() {
-        repo.upsertProfile(sampleProfile)
-        assertTrue(fs.files.containsKey("/home/testuser/.aws/config"))
+    fun `getProfile returns null for unknown profile`() {
+        assertNull(repo.getProfile("unknown"))
     }
 
     @Test
-    fun `upsertProfile creates aws directory when it does not exist`() {
-        repo.upsertProfile(sampleProfile)
-        assertTrue(fs.directories.contains("/home/testuser/.aws"))
-    }
-
-    @Test
-    fun `getProfile retrieves previously written profile`() {
-        repo.upsertProfile(sampleProfile)
-        val retrieved = repo.getProfile("prod-1")
-        assertNotNull(retrieved)
-        assertEquals("prod-1", retrieved.name)
-        assertEquals("Terraform", retrieved.roleName)
-        assertEquals("111111111111", retrieved.accountId)
-    }
-
-    @Test
-    fun `upsertProfile replaces existing profile`() {
-        repo.upsertProfile(sampleProfile)
-        repo.upsertProfile(elevatedProfile)
-        val retrieved = repo.getProfile("prod-1")
-        assertNotNull(retrieved)
-        assertEquals("TerraformElevated", retrieved.roleName)
-    }
-
-    @Test
-    fun `upsertProfile preserves unrelated profiles`() {
-        val existingConfig = """
-            [default]
-            region = eu-west-1
-
-            [profile other-tool]
+    fun `getProfile works without sso_session field`() {
+        fs.files[configPath] = """
+            [profile legacy]
+            sso_account_id = 333333333333
+            sso_role_name = Terraform
             region = us-east-1
-
-            [profile prod-1]
-            sso_session = company
-            sso_account_id = 111111111111
-            sso_role_name = Terraform
-            region = eu-west-1
-            output = json
         """.trimIndent()
-        fs.files["/home/testuser/.aws/config"] = existingConfig
+        val profile = repo.getProfile("legacy")
+        assertNotNull(profile)
+        assertEquals("Terraform", profile.roleName)
+    }
 
-        repo.upsertProfile(elevatedProfile)
+    @Test
+    fun `upsertProfile updates only sso_role_name`() {
+        val profile = AwsProfile("prod-1", "company", "111111111111", "TerraformElevated", "eu-west-1")
+        repo.upsertProfile(profile)
+        val updated = repo.getProfile("prod-1")
+        assertNotNull(updated)
+        assertEquals("TerraformElevated", updated.roleName)
+        assertEquals("111111111111", updated.accountId)
+        assertEquals("eu-west-1", updated.region)
+    }
 
-        val content = fs.files["/home/testuser/.aws/config"]!!
+    @Test
+    fun `upsertProfile preserves all other sections`() {
+        val profile = AwsProfile("prod-1", "company", "111111111111", "TerraformElevated", "eu-west-1")
+        repo.upsertProfile(profile)
+        val content = fs.files[configPath]!!
         assertTrue(content.contains("[default]"))
-        assertTrue(content.contains("[profile other-tool]"))
-        assertTrue(content.contains("us-east-1"))
-        assertTrue(content.contains("TerraformElevated"))
+        assertTrue(content.contains("[profile prod-2]"))
+        assertTrue(content.contains("222222222222"))
     }
 
     @Test
-    fun `upsertProfile does not corrupt other profile when replacing`() {
-        val existingConfig = """
-            [profile prod-2]
-            sso_session = company
-            sso_account_id = 222222222222
-            sso_role_name = Terraform
-            region = eu-west-1
-            output = json
-
-            [profile prod-1]
-            sso_session = company
-            sso_account_id = 111111111111
-            sso_role_name = Terraform
-            region = eu-west-1
-            output = json
-        """.trimIndent()
-        fs.files["/home/testuser/.aws/config"] = existingConfig
-
-        repo.upsertProfile(elevatedProfile)
-
-        val prod2 = repo.getProfile("prod-2")
-        assertNotNull(prod2)
-        assertEquals("222222222222", prod2.accountId)
-        assertEquals("Terraform", prod2.roleName)
+    fun `upsertProfile does not affect other profiles`() {
+        val profile = AwsProfile("prod-1", "company", "111111111111", "TerraformElevated", "eu-west-1")
+        repo.upsertProfile(profile)
+        assertEquals("Terraform", repo.getProfile("prod-2")?.roleName)
     }
 
     @Test
-    fun `getProfile returns null for non-existent profile in existing config`() {
-        val existingConfig = """
-            [profile prod-2]
-            sso_session = company
-            sso_account_id = 222222222222
-            sso_role_name = Terraform
-            region = eu-west-1
-            output = json
-        """.trimIndent()
-        fs.files["/home/testuser/.aws/config"] = existingConfig
-        assertNull(repo.getProfile("prod-1"))
-    }
-
-    @Test
-    fun `upsertProfile on empty existing config appends section`() {
-        fs.files["/home/testuser/.aws/config"] = ""
-        repo.upsertProfile(sampleProfile)
-        val retrieved = repo.getProfile("prod-1")
-        assertNotNull(retrieved)
+    fun `upsertProfile is a no-op when config file does not exist`() {
+        fs.files.remove(configPath)
+        val profile = AwsProfile("prod-1", "company", "111111111111", "TerraformElevated", "eu-west-1")
+        repo.upsertProfile(profile)
+        assertNull(fs.files[configPath])
     }
 
     @Test
     fun `write is atomic via temp-then-rename`() {
-        // The in-memory FS simulates move: the temp file should not persist after move
-        repo.upsertProfile(sampleProfile)
-        val tempKeys = fs.files.keys.filter { it.endsWith(".tmp.") || it.contains(".tmp.") }
+        val profile = AwsProfile("prod-1", "company", "111111111111", "TerraformElevated", "eu-west-1")
+        repo.upsertProfile(profile)
+        val tempKeys = fs.files.keys.filter { it.contains(".tmp.") }
         assertTrue(tempKeys.isEmpty(), "Expected no leftover temp files, found: $tempKeys")
+    }
+
+    @Test
+    fun `listSsoProfiles returns all SSO profiles`() {
+        val profiles = repo.listSsoProfiles()
+        assertEquals(2, profiles.size)
+        assertTrue(profiles.any { it.profileName == "prod-1" })
+        assertTrue(profiles.any { it.profileName == "prod-2" })
     }
 }
