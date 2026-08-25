@@ -265,6 +265,15 @@ jobs:
               ZSH
             end
 
+            def caveats
+              <<~EOS
+                To use the awsp interactive profile switcher in zsh, add to ~/.zshrc:
+                  source #{opt_share}/zsh/site-functions/_awsp
+
+                Fish shell loads awsp automatically — no extra steps needed.
+              EOS
+            end
+
             test do
               output = shell_output("#{bin}/aws-profile --version").strip
               assert_match version.to_s, output
