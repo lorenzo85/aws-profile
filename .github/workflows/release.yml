@@ -233,12 +233,12 @@ jobs:
               (share/"fish/vendor_functions.d/awsp.fish").write <<~FISH
                 function awsp --description 'Interactively select an AWS profile'
                   set account (aws-profile list | fzf --prompt="AWS account: " --height=40%)
-                  test -n "$account" || return
+                  test -n "\$account" || return
                   read -l -P "Elevated access? [y/N] " elevated
-                  if test "$elevated" = y -o "$elevated" = Y
-                    aws-profile $account+
+                  if test "\$elevated" = y -o "\$elevated" = Y
+                    aws-profile \$account+
                   else
-                    aws-profile $account
+                    aws-profile \$account
                   end
                 end
               FISH
@@ -248,12 +248,12 @@ jobs:
               (share/"zsh/site-functions/_awsp").write <<~ZSH
                 awsp() {
                   local account
-                  account=$(aws-profile list | fzf --prompt="AWS account: " --height=40%) || return
+                  account=\$(aws-profile list | fzf --prompt="AWS account: " --height=40%) || return
                   read -r -p "Elevated access? [y/N] " elevated
-                  if [[ "$elevated" =~ ^[Yy]$ ]]; then
-                    aws-profile "${account}+"
+                  if [[ "\$elevated" =~ ^[Yy]\$ ]]; then
+                    aws-profile "\${account}+"
                   else
-                    aws-profile "$account"
+                    aws-profile "\$account"
                   fi
                 }
               ZSH
