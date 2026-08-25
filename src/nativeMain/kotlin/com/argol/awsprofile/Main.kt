@@ -5,8 +5,6 @@ import com.argol.awsprofile.cli.Cli
 import com.argol.awsprofile.cli.CliParser
 import com.argol.awsprofile.cli.ConsoleOutput
 import com.argol.awsprofile.infrastructure.aws.AwsConfigFileRepository
-import com.argol.awsprofile.infrastructure.aws.AwsSsoDiscovery
-import com.argol.awsprofile.infrastructure.aws.SsoCacheReader
 import com.argol.awsprofile.infrastructure.config.TomlConfigurationRepository
 import com.argol.awsprofile.infrastructure.filesystem.NativeFileSystem
 import com.argol.awsprofile.infrastructure.filesystem.NativeUserDirectories
@@ -23,15 +21,13 @@ fun main(args: Array<String>) {
     val configurationRepository = TomlConfigurationRepository(fileSystem, userDirectories)
     val awsConfigRepository = AwsConfigFileRepository(fileSystem, userDirectories)
     val loginService = LoginService(processRunner)
-    val ssoDiscovery = AwsSsoDiscovery(processRunner, SsoCacheReader(fileSystem, userDirectories))
 
     val cli = Cli(
         parser = CliParser(),
         output = ConsoleOutput(),
         configurationRepository = configurationRepository,
         awsConfigRepository = awsConfigRepository,
-        loginService = loginService,
-        ssoDiscovery = ssoDiscovery
+        loginService = loginService
     )
 
     val exitCode = cli.run(args)

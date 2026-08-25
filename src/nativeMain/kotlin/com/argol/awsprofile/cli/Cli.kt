@@ -6,7 +6,6 @@ import com.argol.awsprofile.application.CurrentProfileService
 import com.argol.awsprofile.application.InitService
 import com.argol.awsprofile.application.LoginService
 import com.argol.awsprofile.application.ProfileSwitcher
-import com.argol.awsprofile.ports.SsoDiscovery
 import com.argol.awsprofile.domain.AccessLevel
 import com.argol.awsprofile.domain.AppConfig
 import com.argol.awsprofile.domain.AwsProfile
@@ -29,8 +28,7 @@ class Cli(
     private val output: CliOutput,
     private val configurationRepository: ConfigurationRepository,
     private val awsConfigRepository: AwsConfigRepository,
-    private val loginService: LoginService,
-    private val ssoDiscovery: SsoDiscovery
+    private val loginService: LoginService
 ) {
     fun run(args: Array<String>): Int {
         val command = try {
@@ -73,60 +71,56 @@ class Cli(
     }
 
     private fun handleList(): Int {
-        val resolver = AccountResolver(configurationRepository)
-        resolver.list().forEach { output.info(it.alias) }
+        val resolver = AccountResolver(awsConfigRepository)
+        resolver.list().forEach { output.info(it.profileName) }
         return ExitCodes.SUCCESS
     }
 
     private fun handleListVerbose(): Int {
-        val resolver = AccountResolver(configurationRepository)
-        val accounts = resolver.list()
-        val maxAlias = accounts.maxOfOrNull { it.alias.length } ?: 0
-        accounts.forEach { account ->
-            val pad = " ".repeat(maxAlias - account.alias.length)
-            output.info("${account.alias}$pad    ${account.accountId}    ${account.region}")
+        val resolver = AccountResolver(awsConfigRepository)
+        val profiles = resolver.list()
+        val maxAlias = profiles.maxOfOrNull { it.profileName.length } ?: 0
+        profiles.forEach { profile ->
+            val pad = " ".repeat(maxAlias - profile.profileName.length)
+            output.info("${profile.profileName}$pad    ${profile.accountId}    ${profile.region}")
         }
         return ExitCodes.SUCCESS
     }
 
     private fun handleCurrent(command: CurrentCommand): Int {
-        val service = CurrentProfileService(awsConfigRepository)
-        val config = configurationRepository.load()
+        val config = try { configurationRepository.load() } catch (e: AppError) { null }
         val profileName = command.profileName
 
         if (profileName != null) {
-            val profile = service.current(profileName)
+            val profile = awsConfigRepository.getProfile(profileName)
             if (profile == null) {
                 output.error("No configured profile found for: $profileName")
                 return ExitCodes.ACCOUNT_NOT_FOUND
             }
             printCurrentProfile(profile, config)
         } else {
-            // Show all aws-profile managed profiles from config
-            val resolver = AccountResolver(configurationRepository)
-            val accounts = resolver.list()
-            var found = false
-            accounts.forEach { account ->
-                val profile = service.current(account.alias)
-                if (profile != null) {
-                    if (found) output.println()
-                    printCurrentProfile(profile, config)
-                    found = true
-                }
+            val discovered = awsConfigRepository.listSsoProfiles().sortedBy { it.profileName }
+            if (discovered.isEmpty()) {
+                output.info("No SSO profiles found in ~/.aws/config. Run 'aws-profile <account>' first.")
+                return ExitCodes.SUCCESS
             }
-            if (!found) {
-                output.info("No managed profiles found in ~/.aws/config. Run 'aws-profile <account>' first.")
+            var first = true
+            discovered.forEach { d ->
+                val profile = awsConfigRepository.getProfile(d.profileName)
+                if (profile != null) {
+                    if (!first) output.println()
+                    printCurrentProfile(profile, config)
+                    first = false
+                }
             }
         }
         return ExitCodes.SUCCESS
     }
 
     private fun handleInit(): Int {
-        val service = InitService(ssoDiscovery, awsConfigRepository, configurationRepository)
-        service.init()
+        InitService(configurationRepository).init()
         output.success("Config written to ~/.config/aws-profile/config.toml")
-        output.info("Edit the file to set your permission set names, then run:")
-        output.info("  aws-profile list")
+        output.info("Edit elevated_suffix if your elevated role uses a different suffix.")
         return ExitCodes.SUCCESS
     }
 
@@ -152,25 +146,18 @@ class Cli(
     }
 
     private fun handleValidate(command: ValidateCommand): Int {
-        val resolver = AccountResolver(configurationRepository)
-        val account = resolver.resolve(command.profileName)
-        val awsProfile = awsConfigRepository.getProfile(command.profileName)
-
         output.info("Validating configuration for '${command.profileName}'...")
-        output.info("  Account alias:  ${account.alias}")
-        output.info("  Account ID:     ${account.accountId}")
-        output.info("  Region:         ${account.region}")
 
-        if (awsProfile != null) {
-            output.info("  AWS profile:    found")
-            output.info("  Role name:      ${awsProfile.roleName}")
-            if (awsProfile.accountId != account.accountId) {
-                output.error("  MISMATCH: AWS profile account ID ${awsProfile.accountId} != config ${account.accountId}")
-                return ExitCodes.AWS_CONFIG_ERROR
-            }
-        } else {
+        val profile = awsConfigRepository.getProfile(command.profileName)
+        if (profile == null) {
             output.info("  AWS profile:    not yet configured (run 'aws-profile ${command.profileName}' to create)")
+            return ExitCodes.ACCOUNT_NOT_FOUND
         }
+
+        output.info("  Account ID:     ${profile.accountId}")
+        output.info("  Region:         ${profile.region}")
+        output.info("  SSO session:    ${profile.ssoSession}")
+        output.info("  Role name:      ${profile.roleName}")
         output.success("Validation passed.")
         return ExitCodes.SUCCESS
     }
@@ -183,12 +170,11 @@ class Cli(
         output.success("✓ Region:      ${profile.region}")
     }
 
-    private fun printCurrentProfile(profile: AwsProfile, config: AppConfig) {
-        val standingRole = config.standingPermissionSet.value
-        val elevatedRole = config.elevatedPermissionSet?.value
-        val level = when (profile.roleName) {
-            standingRole -> "STANDING"
-            elevatedRole -> "ELEVATED"
+    private fun printCurrentProfile(profile: AwsProfile, config: AppConfig?) {
+        val suffix = config?.elevatedSuffix
+        val level = when {
+            suffix != null && profile.roleName.endsWith(suffix) -> "ELEVATED"
+            suffix != null -> "STANDING"
             else -> profile.roleName
         }
         output.info("Profile:     ${profile.name}")
@@ -206,15 +192,15 @@ class Cli(
             Manage AWS IAM Identity Center profiles for Terraform and the AWS CLI.
 
             USAGE:
-              aws-profile init               Generate config from existing SSO profiles
+              aws-profile init               Create config file with default settings
               aws-profile <account>          Switch to standing access
               aws-profile <account>+         Switch to elevated access
-              aws-profile list               List configured accounts
+              aws-profile list               List SSO profiles from ~/.aws/config
               aws-profile list --verbose     List with account IDs and regions
-              aws-profile current            Show all managed profiles
+              aws-profile current            Show all SSO profile details
               aws-profile current <account>  Show a specific profile
               aws-profile login <account>    Run 'aws sso login --profile <account>'
-              aws-profile validate <account> Validate local configuration
+              aws-profile validate <account> Validate profile configuration
               aws-profile reset              Reset all profiles to standing access
               aws-profile version            Show version
               aws-profile --help             Show this help

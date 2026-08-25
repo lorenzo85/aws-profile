@@ -2,7 +2,6 @@ package com.argol.awsprofile.infrastructure.aws
 
 import com.argol.awsprofile.domain.AwsProfile
 import com.argol.awsprofile.domain.DiscoveredSsoProfile
-import com.argol.awsprofile.domain.SsoSession
 
 // Raw representation preserving file content for unrelated sections
 data class AwsConfigDocument(
@@ -67,15 +66,6 @@ object AwsConfigParser {
             doc.sections + newSection
         }
         return doc.copy(sections = newSections)
-    }
-
-    fun extractSsoSession(section: AwsConfigSectionRaw): SsoSession? {
-        if (!section.header.startsWith("sso-session ")) return null
-        val name = section.header.removePrefix("sso-session ").trim()
-        val entries = parseEntries(section.body)
-        val startUrl = entries["sso_start_url"] ?: return null
-        val region = entries["sso_region"] ?: return null
-        return SsoSession(name = name, startUrl = startUrl, region = region)
     }
 
     fun extractSsoProfile(section: AwsConfigSectionRaw): DiscoveredSsoProfile? {
