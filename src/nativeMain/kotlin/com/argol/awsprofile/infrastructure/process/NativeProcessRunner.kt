@@ -41,6 +41,31 @@ class NativeProcessRunner : ProcessRunner {
         return ProcessResult(exitCode = exitCode, stdout = "", stderr = "")
     }
 
+    @OptIn(ExperimentalForeignApi::class)
+    override fun capture(command: String, arguments: List<String>): ProcessResult {
+        val allArgs = listOf(command) + arguments
+        val cmd = allArgs.joinToString(" ") { escapeShellArg(it) } + " 2>&1"
+        val pipe = popen(cmd, "r")
+            ?: return ProcessResult(exitCode = 1, stdout = "", stderr = "Failed to run: $command")
+        val output = StringBuilder()
+        memScoped {
+            val buffer = allocArray<ByteVar>(8192)
+            while (fgets(buffer, 8192, pipe) != null) {
+                output.append(buffer.toKString())
+            }
+        }
+        val rawStatus = pclose(pipe)
+        val exitCode = if (rawStatus < 0) 1 else (rawStatus ushr 8) and 0xFF
+        val out = output.toString().trim()
+        return ProcessResult(
+            exitCode = exitCode,
+            stdout = if (exitCode == 0) out else "",
+            stderr = if (exitCode != 0) out else ""
+        )
+    }
+
+    private fun escapeShellArg(arg: String): String = "'${arg.replace("'", "'\\''")}'"
+
     override fun isAvailable(command: String): Boolean {
         val pathEnv = getenv("PATH")?.toKString() ?: return false
         for (dir in pathEnv.split(":")) {

@@ -6,6 +6,7 @@ import com.argol.awsprofile.application.CurrentProfileService
 import com.argol.awsprofile.application.InitService
 import com.argol.awsprofile.application.LoginService
 import com.argol.awsprofile.application.ProfileSwitcher
+import com.argol.awsprofile.ports.SsoDiscovery
 import com.argol.awsprofile.domain.AccessLevel
 import com.argol.awsprofile.domain.AppConfig
 import com.argol.awsprofile.domain.AwsProfile
@@ -28,7 +29,8 @@ class Cli(
     private val output: CliOutput,
     private val configurationRepository: ConfigurationRepository,
     private val awsConfigRepository: AwsConfigRepository,
-    private val loginService: LoginService
+    private val loginService: LoginService,
+    private val ssoDiscovery: SsoDiscovery
 ) {
     fun run(args: Array<String>): Int {
         val command = try {
@@ -120,7 +122,7 @@ class Cli(
     }
 
     private fun handleInit(): Int {
-        val service = InitService(awsConfigRepository, configurationRepository)
+        val service = InitService(ssoDiscovery, awsConfigRepository, configurationRepository)
         service.init()
         output.success("Config written to ~/.config/aws-profile/config.toml")
         output.info("Edit the file to set your permission set names, then run:")

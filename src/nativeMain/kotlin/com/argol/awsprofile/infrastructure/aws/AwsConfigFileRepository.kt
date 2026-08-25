@@ -2,6 +2,7 @@ package com.argol.awsprofile.infrastructure.aws
 
 import com.argol.awsprofile.domain.AwsProfile
 import com.argol.awsprofile.domain.DiscoveredSsoProfile
+import com.argol.awsprofile.domain.SsoSession
 import com.argol.awsprofile.errors.AwsConfigError
 import com.argol.awsprofile.infrastructure.filesystem.FileSystem
 import com.argol.awsprofile.infrastructure.filesystem.Path
@@ -83,6 +84,11 @@ class AwsConfigFileRepository(
     override fun listSsoProfiles(): List<DiscoveredSsoProfile> {
         val text = fileSystem.readOrNull(configPath) ?: return emptyList()
         return AwsConfigParser.parse(text).sections.mapNotNull { AwsConfigParser.extractSsoProfile(it) }
+    }
+
+    override fun findSsoSessions(): List<SsoSession> {
+        val text = fileSystem.readOrNull(configPath) ?: return emptyList()
+        return AwsConfigParser.parse(text).sections.mapNotNull { AwsConfigParser.extractSsoSession(it) }
     }
 
     private fun ensureAwsDirectoryExists() {

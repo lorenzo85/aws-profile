@@ -8,5 +8,6 @@ data class ProcessResult(
 
 interface ProcessRunner {
     fun run(command: String, arguments: List<String> = emptyList()): ProcessResult
+    fun capture(command: String, arguments: List<String> = emptyList()): ProcessResult
     fun isAvailable(command: String): Boolean
 }

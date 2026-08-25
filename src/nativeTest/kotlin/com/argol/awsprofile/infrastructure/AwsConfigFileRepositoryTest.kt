@@ -37,6 +37,9 @@ class InMemoryFileSystem : FileSystem {
 
     override fun createDirectories(path: Path) { directories.add(path.value) }
     override fun setRestrictivePermissions(path: Path) {}
+    override fun listFiles(path: Path): List<Path> =
+        files.keys.filter { it.startsWith(path.value + "/") && !it.removePrefix(path.value + "/").contains("/") }
+            .map { Path(it) }
 }
 
 class FakeUserDirectories(home: String = "/home/testuser") : UserDirectories {

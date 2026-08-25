@@ -2,6 +2,7 @@ package com.argol.awsprofile.application
 
 import com.argol.awsprofile.domain.*
 import com.argol.awsprofile.domain.DiscoveredSsoProfile
+import com.argol.awsprofile.domain.SsoSession
 import com.argol.awsprofile.errors.AccountNotFoundError
 import com.argol.awsprofile.ports.AwsConfigRepository
 import com.argol.awsprofile.ports.ConfigurationRepository
@@ -25,6 +26,7 @@ class FakeAwsConfigRepository : AwsConfigRepository {
     override fun upsertProfile(profile: AwsProfile) { profiles[profile.name] = profile }
     override fun upsertProfiles(profiles: List<AwsProfile>) { profiles.forEach { upsertProfile(it) } }
     override fun listSsoProfiles(): List<DiscoveredSsoProfile> = emptyList()
+    override fun findSsoSessions(): List<SsoSession> = emptyList()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

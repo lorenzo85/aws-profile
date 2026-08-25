@@ -23,6 +23,7 @@ interface FileSystem {
     fun move(source: Path, target: Path)
     fun createDirectories(path: Path)
     fun setRestrictivePermissions(path: Path)
+    fun listFiles(path: Path): List<Path>
 }
 
 interface UserDirectories {
@@ -116,6 +117,23 @@ class NativeFileSystem : FileSystem {
                 mkdir(current, 448u.convert())
             }
         }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun listFiles(path: Path): List<Path> {
+        val dir = opendir(path.value) ?: return emptyList()
+        val result = mutableListOf<Path>()
+        try {
+            while (true) {
+                val entry = readdir(dir) ?: break
+                val name = entry.pointed.d_name.toKString()
+                if (name == "." || name == "..") continue
+                result.add(path / name)
+            }
+        } finally {
+            closedir(dir)
+        }
+        return result
     }
 }
 

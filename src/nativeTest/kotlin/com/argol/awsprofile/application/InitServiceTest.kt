@@ -1,34 +1,48 @@
 package com.argol.awsprofile.application
 
 import com.argol.awsprofile.domain.AppConfig
+import com.argol.awsprofile.domain.AwsProfile
 import com.argol.awsprofile.domain.DiscoveredSsoProfile
 import com.argol.awsprofile.domain.PermissionSetName
+import com.argol.awsprofile.domain.SsoAccount
+import com.argol.awsprofile.domain.SsoSession
 import com.argol.awsprofile.errors.ConfigurationError
 import com.argol.awsprofile.ports.AwsConfigRepository
 import com.argol.awsprofile.ports.ConfigurationRepository
-import com.argol.awsprofile.domain.AwsProfile
+import com.argol.awsprofile.ports.SsoDiscovery
 import kotlin.test.Test
 import kotlin.test.assertContains
-import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 
+class FakeSsoDiscovery(
+    private val accounts: List<SsoAccount> = emptyList(),
+    private val error: ConfigurationError? = null
+) : SsoDiscovery {
+    override fun discover(): List<SsoAccount> {
+        if (error != null) throw error
+        return accounts
+    }
+}
+
 class FakeAwsConfigRepositoryForInit(
-    private val discovered: List<DiscoveredSsoProfile> = emptyList()
+    private val discovered: List<DiscoveredSsoProfile> = emptyList(),
+    private val ssoSessions: List<SsoSession> = emptyList()
 ) : AwsConfigRepository {
     override fun getProfile(name: String): AwsProfile? = null
     override fun upsertProfile(profile: AwsProfile) {}
     override fun upsertProfiles(profiles: List<AwsProfile>) {}
     override fun listSsoProfiles(): List<DiscoveredSsoProfile> = discovered
+    override fun findSsoSessions(): List<SsoSession> = ssoSessions
 }
 
 class FakeConfigurationRepositoryForInit(
     private val fileExists: Boolean = false
 ) : ConfigurationRepository {
     var written: String? = null
-
     override fun exists(): Boolean = fileExists
     override fun write(content: String) { written = content }
     override fun load(): AppConfig = AppConfig(
@@ -41,112 +55,123 @@ class FakeConfigurationRepositoryForInit(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-private fun profile(
-    name: String,
+private fun account(
     accountId: String,
-    region: String = "eu-west-1",
-    ssoSession: String? = "company",
-    roleName: String = "Terraform"
-) = DiscoveredSsoProfile(name, ssoSession, accountId, roleName, region)
+    name: String = "Account $accountId",
+    alias: String = name.lowercase().replace(" ", "-"),
+    roles: List<String> = listOf("Terraform")
+) = SsoAccount(accountId = accountId, accountName = name, alias = alias, roles = roles)
+
+private fun session(name: String = "company", region: String = "eu-west-1") =
+    SsoSession(name = name, startUrl = "https://company.awsapps.com/start", region = region)
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 class InitServiceTest {
 
+    private val configRepo = FakeConfigurationRepositoryForInit(fileExists = false)
+
+    private fun service(
+        accounts: List<SsoAccount> = listOf(account("111111111111")),
+        sessions: List<SsoSession> = listOf(session()),
+        discovered: List<DiscoveredSsoProfile> = emptyList(),
+        fileExists: Boolean = false
+    ) = InitService(
+        FakeSsoDiscovery(accounts),
+        FakeAwsConfigRepositoryForInit(discovered, sessions),
+        FakeConfigurationRepositoryForInit(fileExists)
+    )
+
     @Test
     fun `throws ConfigurationError when config already exists`() {
-        val service = InitService(
+        assertFailsWith<ConfigurationError> { service(fileExists = true).init() }
+    }
+
+    @Test
+    fun `throws ConfigurationError when SSO discovery fails`() {
+        val s = InitService(
+            FakeSsoDiscovery(error = ConfigurationError("no token")),
             FakeAwsConfigRepositoryForInit(),
-            FakeConfigurationRepositoryForInit(fileExists = true)
+            FakeConfigurationRepositoryForInit()
         )
-        assertFailsWith<ConfigurationError> { service.init() }
+        assertFailsWith<ConfigurationError> { s.init() }
     }
 
     @Test
-    fun `throws ConfigurationError when no SSO profiles found`() {
-        val service = InitService(
-            FakeAwsConfigRepositoryForInit(emptyList()),
-            FakeConfigurationRepositoryForInit(fileExists = false)
-        )
-        assertFailsWith<ConfigurationError> { service.init() }
+    fun `writes TOML when discovery succeeds`() {
+        val repo = FakeConfigurationRepositoryForInit(fileExists = false)
+        InitService(FakeSsoDiscovery(listOf(account("111111111111"))), FakeAwsConfigRepositoryForInit(), repo).init()
+        assertNotNull(repo.written)
     }
 
     @Test
-    fun `writes TOML when config does not exist and profiles are found`() {
-        val configRepo = FakeConfigurationRepositoryForInit(fileExists = false)
-        val service = InitService(
-            FakeAwsConfigRepositoryForInit(listOf(profile("prod-1", "111111111111"))),
-            configRepo
-        )
-        service.init()
-        assertTrue(configRepo.written != null)
-    }
-
-    @Test
-    fun `generated TOML contains sso session from discovered profile`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(profile("prod-1", "111111111111", ssoSession = "mycompany")))
+    fun `generated TOML uses SSO session name from config`() {
+        val s = service(sessions = listOf(session("mycompany")))
+        val toml = s.generateToml("mycompany", "eu-west-1", listOf(account("111111111111")))
         assertContains(toml, "session = \"mycompany\"")
     }
 
     @Test
-    fun `generated TOML uses most common sso session when profiles differ`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val profiles = listOf(
-            profile("prod-1", "111111111111", ssoSession = "company"),
-            profile("prod-2", "222222222222", ssoSession = "company"),
-            profile("legacy", "333333333333", ssoSession = "old-company")
-        )
-        val toml = service.generateToml(profiles)
-        assertContains(toml, "session = \"company\"")
-    }
-
-    @Test
-    fun `generated TOML contains placeholder session when no sso_session found`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(profile("prod-1", "111111111111", ssoSession = null)))
-        assertContains(toml, "session = \"your-sso-session\"")
-    }
-
-    @Test
     fun `generated TOML contains all discovered accounts`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(
-            profile("prod-1", "111111111111"),
-            profile("prod-2", "222222222222"),
-            profile("staging", "333333333333", region = "eu-central-1")
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(
+            account("111111111111", name = "Prod", alias = "prod"),
+            account("222222222222", name = "Staging", alias = "staging")
         ))
-        assertContains(toml, "[accounts.prod-1]")
+        assertContains(toml, "[accounts.prod]")
         assertContains(toml, "account_id = \"111111111111\"")
-        assertContains(toml, "[accounts.prod-2]")
-        assertContains(toml, "account_id = \"222222222222\"")
         assertContains(toml, "[accounts.staging]")
-        assertContains(toml, "region = \"eu-central-1\"")
+        assertContains(toml, "account_id = \"222222222222\"")
     }
 
     @Test
-    fun `generated TOML contains permission_sets section with FIXME placeholders`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(profile("prod-1", "111111111111")))
+    fun `generated TOML shows discovered roles as comment`() {
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(
+            account("111111111111", roles = listOf("Terraform", "TerraformElevated"))
+        ))
+        assertContains(toml, "Roles discovered: Terraform, TerraformElevated")
+    }
+
+    @Test
+    fun `generated TOML contains permission_sets with FIXME`() {
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(account("111111111111")))
         assertContains(toml, "[permission_sets]")
         assertContains(toml, "standing = \"FIXME\"")
     }
 
     @Test
-    fun `generated TOML has sso section before permission_sets`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(profile("prod-1", "111111111111")))
-        val ssoIdx = toml.indexOf("[sso]")
-        val permIdx = toml.indexOf("[permission_sets]")
-        val accountIdx = toml.indexOf("[accounts.")
-        assertTrue(ssoIdx < permIdx)
-        assertTrue(permIdx < accountIdx)
+    fun `generated TOML uses known region from existing config profile`() {
+        val s = service()
+        val toml = s.generateToml(
+            "company", "eu-west-1",
+            listOf(account("111111111111")),
+            regionByAccountId = mapOf("111111111111" to "us-east-1")
+        )
+        assertContains(toml, "region = \"us-east-1\"")
     }
 
     @Test
-    fun `account region is preserved in generated TOML`() {
-        val service = InitService(FakeAwsConfigRepositoryForInit(), FakeConfigurationRepositoryForInit())
-        val toml = service.generateToml(listOf(profile("prod-1", "111111111111", region = "us-east-1")))
-        assertContains(toml, "region = \"us-east-1\"")
+    fun `generated TOML falls back to SSO region with comment when account not in existing config`() {
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(account("111111111111")))
+        assertContains(toml, "region = \"eu-west-1\"")
+        assertContains(toml, "verify region")
+    }
+
+    @Test
+    fun `generated TOML has sso before permission_sets before accounts`() {
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(account("111111111111")))
+        assertTrue(toml.indexOf("[sso]") < toml.indexOf("[permission_sets]"))
+        assertTrue(toml.indexOf("[permission_sets]") < toml.indexOf("[accounts."))
+    }
+
+    @Test
+    fun `account name appears as comment above account section`() {
+        val s = service()
+        val toml = s.generateToml("company", "eu-west-1", listOf(account("111111111111", name = "Production")))
+        assertContains(toml, "# Production")
     }
 }
