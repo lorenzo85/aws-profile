@@ -213,6 +213,8 @@ jobs:
               end
             end
 
+            depends_on "fzf"
+
             on_linux do
               if Hardware::CPU.arm?
                 url "https://github.com/lorenzo85/aws-profile/releases/download/v${VERSION}/aws-profile-linux-arm64.tar.gz"
