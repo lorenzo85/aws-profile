@@ -70,6 +70,28 @@ class AwsConfigParserTest {
     }
 
     @Test
+    fun `extractProfile falls back to sso_region when region is absent`() {
+        val section = AwsConfigSectionRaw(
+            "profile legacy",
+            "sso_account_id = 111111111111\nsso_role_name = Terraform\nsso_region = eu-west-1\n"
+        )
+        val profile = AwsConfigParser.extractProfile(section)
+        assertNotNull(profile)
+        assertEquals("eu-west-1", profile.region)
+    }
+
+    @Test
+    fun `extractSsoProfile falls back to sso_region when region is absent`() {
+        val section = AwsConfigSectionRaw(
+            "profile legacy",
+            "sso_account_id = 111111111111\nsso_role_name = Terraform\nsso_region = eu-west-1\n"
+        )
+        val profile = AwsConfigParser.extractSsoProfile(section)
+        assertNotNull(profile)
+        assertEquals("eu-west-1", profile.region)
+    }
+
+    @Test
     fun `updateRoleName changes only sso_role_name`() {
         val doc = AwsConfigParser.parse(sampleConfig)
         val updated = AwsConfigParser.updateRoleName(doc, "prod-1", "TerraformElevated")

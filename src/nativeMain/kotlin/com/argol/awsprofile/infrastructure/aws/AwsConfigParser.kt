@@ -68,7 +68,7 @@ object AwsConfigParser {
         val entries = parseEntries(section.body)
         val accountId = entries["sso_account_id"] ?: return null
         val roleName = entries["sso_role_name"] ?: return null
-        val region = entries["region"] ?: return null
+        val region = entries["region"] ?: entries["sso_region"] ?: return null
         return DiscoveredSsoProfile(
             profileName = name,
             ssoSession = entries["sso_session"],
@@ -84,7 +84,7 @@ object AwsConfigParser {
         val entries = parseEntries(section.body)
         val accountId = entries["sso_account_id"] ?: return null
         val roleName = entries["sso_role_name"] ?: return null
-        val region = entries["region"] ?: return null
+        val region = entries["region"] ?: entries["sso_region"] ?: return null
         return AwsProfile(
             name = name,
             ssoSession = entries["sso_session"] ?: "",
