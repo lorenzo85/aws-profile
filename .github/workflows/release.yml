@@ -234,17 +234,19 @@ jobs:
                 function awsp --description 'Interactively select an AWS profile'
                   set account (aws-profile list | fzf --prompt="AWS account: " --height=~40%)
                   test -n "\$account" || return
-                  set session (aws configure get sso_session --profile \$account 2>/dev/null)
-                  if test -z "\$session"
-                    set session (aws configure get sso_start_url --profile \$account 2>/dev/null)
-                  end
-                  if test -n "\$session"
-                    set key (printf "%s" \$session | shasum -a 1 | awk '{print $1}')
-                    set cache \$HOME/.aws/sso/cache/\$key.json
-                    if not test -f \$cache; or not python3 -c "import json,sys,datetime as dt; d=json.load(open(sys.argv[1])); e=dt.datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00')); sys.exit(0 if e>dt.datetime.now(dt.timezone.utc) else 1)" \$cache 2>/dev/null
-                      aws sso login --profile \$account
-                    end
-                  else
+                  set start_url (aws configure get sso_start_url --profile \$account 2>/dev/null)
+                  if not python3 -c "
+import json,glob,os,sys
+from datetime import datetime,timezone
+for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')):
+  try:
+    d=json.load(open(f))
+    if d.get('startUrl')==sys.argv[1] and 'accessToken' in d:
+      exp=datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00'))
+      sys.exit(0 if exp>datetime.now(timezone.utc) else 1)
+  except: pass
+sys.exit(1)
+" \$start_url 2>/dev/null
                     aws sso login --profile \$account
                   end
                   read -l -P "Elevated access? [y/N] " elevated
@@ -260,17 +262,21 @@ jobs:
               (share/"zsh/site-functions").mkpath
               (share/"zsh/site-functions/_awsp").write <<~ZSH
                 awsp() {
-                  local account session key cache elevated
+                  local account start_url elevated
                   account=\$(aws-profile list | fzf --prompt="AWS account: " --height=~40%) || return
-                  session=\$(aws configure get sso_session --profile "\$account" 2>/dev/null)
-                  [ -z "\$session" ] && session=\$(aws configure get sso_start_url --profile "\$account" 2>/dev/null)
-                  if [ -n "\$session" ]; then
-                    key=\$(printf "%s" "\$session" | shasum -a 1 | awk '{print $1}')
-                    cache="\$HOME/.aws/sso/cache/\$key.json"
-                    if [ ! -f "\$cache" ] || ! python3 -c "import json,sys,datetime as dt; d=json.load(open(sys.argv[1])); e=dt.datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00')); sys.exit(0 if e>dt.datetime.now(dt.timezone.utc) else 1)" "\$cache" 2>/dev/null; then
-                      aws sso login --profile "\$account"
-                    fi
-                  else
+                  start_url=\$(aws configure get sso_start_url --profile "\$account" 2>/dev/null)
+                  if ! python3 -c "
+import json,glob,os,sys
+from datetime import datetime,timezone
+for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')):
+  try:
+    d=json.load(open(f))
+    if d.get('startUrl')==sys.argv[1] and 'accessToken' in d:
+      exp=datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00'))
+      sys.exit(0 if exp>datetime.now(timezone.utc) else 1)
+  except: pass
+sys.exit(1)
+" "\$start_url" 2>/dev/null; then
                     aws sso login --profile "\$account"
                   fi
                   read "elevated?Elevated access? [y/N] "
