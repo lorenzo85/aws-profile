@@ -232,9 +232,9 @@ jobs:
               (share/"fish/vendor_functions.d").mkpath
               (share/"fish/vendor_functions.d/awsp.fish").write <<~FISH
                 function awsp --description 'Interactively select an AWS profile'
-                  set selection (begin; echo "[all → standing access]"; aws-profile list; end | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ')
+                  set selection (begin; echo "[all > standing access]"; aws-profile list; end | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ')
                   test -n "\$selection" || return
-                  if contains -- "[all → standing access]" \$selection
+                  if contains -- "[all > standing access]" \$selection
                     aws-profile reset
                     return
                   end
@@ -259,7 +259,7 @@ jobs:
               (share/"zsh/site-functions/_awsp").write <<~ZSH
                 awsp() {
                   local accounts start_url elevated account
-                  accounts=\$({ echo "[all → standing access]"; aws-profile list; } | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ') || return
+                  accounts=\$({ echo "[all > standing access]"; aws-profile list; } | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ') || return
                   if echo "\$accounts" | grep -qx '\\[all → standing access\\]'; then
                     aws-profile reset
                     return
