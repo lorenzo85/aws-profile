@@ -232,8 +232,13 @@ jobs:
               (share/"fish/vendor_functions.d").mkpath
               (share/"fish/vendor_functions.d/awsp.fish").write <<~FISH
                 function awsp --description 'Interactively select an AWS profile'
-                  set accounts (aws-profile list | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ')
-                  test -n "\$accounts" || return
+                  set selection (begin; echo "[reset all]"; aws-profile list; end | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ')
+                  test -n "\$selection" || return
+                  if contains -- "[reset all]" \$selection
+                    aws-profile reset
+                    return
+                  end
+                  set accounts \$selection
                   set start_url (aws configure get sso_start_url --profile \$accounts[1] 2>/dev/null)
                   if not python3 -c "import json,glob,os,sys; from datetime import datetime,timezone; m=next((d for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')) for d in [json.load(open(f))] if d.get('startUrl')==sys.argv[1] and d.get('accessToken')),None); sys.exit(0 if m and datetime.fromisoformat(m['expiresAt'].replace('Z','+00:00'))>datetime.now(timezone.utc) else 1)" \$start_url 2>/dev/null
                     aws sso login --profile \$accounts[1]
@@ -254,7 +259,11 @@ jobs:
               (share/"zsh/site-functions/_awsp").write <<~ZSH
                 awsp() {
                   local accounts start_url elevated account
-                  accounts=\$(aws-profile list | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ') || return
+                  accounts=\$({ echo "[reset all]"; aws-profile list; } | fzf --prompt="AWS account: " --height=~40% --multi --bind 'space:toggle' --marker '✓ ') || return
+                  if echo "\$accounts" | grep -qx '\\[reset all\\]'; then
+                    aws-profile reset
+                    return
+                  fi
                   start_url=\$(aws configure get sso_start_url --profile "\$(echo "\$accounts" | head -1)" 2>/dev/null)
                   if ! python3 -c "import json,glob,os,sys; from datetime import datetime,timezone; m=next((d for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')) for d in [json.load(open(f))] if d.get('startUrl')==sys.argv[1] and d.get('accessToken')),None); sys.exit(0 if m and datetime.fromisoformat(m['expiresAt'].replace('Z','+00:00'))>datetime.now(timezone.utc) else 1)" "\$start_url" 2>/dev/null; then
                     aws sso login --profile "\$(echo "\$accounts" | head -1)"
