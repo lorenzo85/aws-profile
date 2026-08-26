@@ -255,7 +255,7 @@ jobs:
                   if ! aws sts get-caller-identity --profile "\$account" &>/dev/null; then
                     aws sso login --profile "\$account"
                   fi
-                  read -r -p "Elevated access? [y/N] " elevated
+                  read "elevated?Elevated access? [y/N] "
                   if [[ "\$elevated" =~ ^[Yy]\$ ]]; then
                     aws-profile "\${account}+"
                   else
