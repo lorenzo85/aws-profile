@@ -13,6 +13,11 @@ Both map to the same AWS CLI profile name (`prod-1`), so Terraform never needs t
 
 ## How it works
 
+`aws-profile` reads your existing `~/.aws/config` — no duplication needed. The only thing
+it needs to know is the suffix that distinguishes your elevated permission set from the
+standing one (e.g. `Elevated`). Everything else (account IDs, regions, SSO sessions) comes
+from the config you already have.
+
 ```
 CLI alias          AWS profile       Permission set
 ─────────────────────────────────────────────────
@@ -20,7 +25,8 @@ prod-1             prod-1            Terraform
 prod-1+            prod-1            TerraformElevated
 ```
 
-`aws-profile` only edits `~/.aws/config`. It never touches credentials, SSO tokens, or caches.
+`aws-profile` only edits `sso_role_name` in `~/.aws/config`. It never touches credentials,
+SSO tokens, or caches.
 
 ---
 
@@ -30,36 +36,52 @@ prod-1+            prod-1            TerraformElevated
 brew install lorenzo85/tap/aws-profile
 ```
 
----
+### Fish shell
 
-## Configuration
+`awsp` (the interactive profile switcher) is loaded automatically — no extra steps needed.
 
-Create `~/.config/aws-profile/config.toml`:
+### Zsh
 
-```toml
-[sso]
-session = "company"
+Run once to enable `awsp`:
 
-[permission_sets]
-standing = "Terraform"
-elevated = "TerraformElevated"
-
-[accounts.prod-1]
-account_id = "111111111111"
-region = "eu-west-1"
-
-[accounts.prod-2]
-account_id = "222222222222"
-region = "eu-west-1"
-
-[accounts.staging-1]
-account_id = "333333333333"
-region = "eu-central-1"
+```bash
+echo 'source $(brew --prefix)/share/zsh/site-functions/_awsp' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ---
 
+## Configuration
+
+Run once after installing:
+
+```bash
+aws-profile init
+```
+
+This creates `~/.config/aws-profile/config.toml` with a single setting:
+
+```toml
+# Suffix appended to the standing role name to get the elevated role.
+# Example: Terraform -> TerraformElevated
+elevated_suffix = "Elevated"
+```
+
+Adjust the suffix to match your permission set naming convention.
+
+---
+
 ## Usage
+
+### Interactive profile switcher (recommended)
+
+```bash
+awsp
+```
+
+1. Select a profile from your `~/.aws/config` via fzf
+2. Answer the elevated access prompt
+3. `awsp` automatically runs `aws sso login` if the SSO token is missing or expired
 
 ### Standing access
 
@@ -89,7 +111,7 @@ aws-profile prod-1+
 ✓ Region:      eu-west-1
 ```
 
-### List accounts
+### List profiles
 
 ```bash
 aws-profile list
@@ -99,6 +121,7 @@ aws-profile list --verbose
 ### Show current profile
 
 ```bash
+aws-profile current
 aws-profile current prod-1
 ```
 
@@ -108,7 +131,15 @@ aws-profile current prod-1
 aws-profile login prod-1
 ```
 
-This runs `aws sso login --profile prod-1`. Only needed when the SSO session expires.
+Runs `aws sso login --profile prod-1`. `awsp` handles this automatically.
+
+### Reset all profiles to standing access
+
+```bash
+aws-profile reset
+```
+
+Strips the elevated suffix from every profile in `~/.aws/config`.
 
 ### Validate configuration
 
@@ -116,7 +147,7 @@ This runs `aws sso login --profile prod-1`. Only needed when the SSO session exp
 aws-profile validate prod-1
 ```
 
-Checks that the local config and AWS profile are consistent, without authenticating.
+Checks that the profile exists in `~/.aws/config` and is consistent.
 
 ---
 
@@ -158,12 +189,12 @@ The `--profile` argument matches the account alias, with no `+`.
 
 ## What aws-profile touches
 
-| File                                  | Action                      |
-|--------------------------------------|-----------------------------|
-| `~/.aws/config`                      | Upserts `[profile <alias>]` |
-| `~/.config/aws-profile/config.toml` | Read only                   |
-| `~/.aws/credentials`                 | Never touched               |
-| SSO cache                            | Never touched               |
+| File                                  | Action                                     |
+|--------------------------------------|--------------------------------------------|
+| `~/.aws/config`                      | Updates `sso_role_name` in place           |
+| `~/.config/aws-profile/config.toml` | Read only                                  |
+| `~/.aws/credentials`                 | Never touched                              |
+| SSO cache                            | Never touched                              |
 
 Writes are atomic: a temporary file is written and renamed over the target.
 
@@ -173,66 +204,23 @@ Writes are atomic: a temporary file is written and renamed over the target.
 
 - Never stores credentials
 - Never reads SSO tokens
-- Only modifies `~/.aws/config`
-- Account IDs stay in your local config (treat it as sensitive)
+- Only modifies `sso_role_name` in `~/.aws/config`
 
 ---
 
-## Local testing (without Homebrew)
-
-Build the binary directly from source and run it:
+## Local build
 
 ```bash
 git clone https://github.com/lorenzo85/aws-profile
 cd aws-profile
-
 ./gradlew linkReleaseExecutableMacosArm64
+# → build/bin/macosArm64/releaseExecutable/aws-profile.kexe
 ```
 
-The binary is placed at:
-
-```
-build/bin/macosArm64/releaseExecutable/aws-profile.kexe
-```
-
-Copy it to your PATH:
+Copy to PATH:
 
 ```bash
 cp build/bin/macosArm64/releaseExecutable/aws-profile.kexe /usr/local/bin/aws-profile
-```
-
-Or run it directly:
-
-```bash
-./build/bin/macosArm64/releaseExecutable/aws-profile.kexe --version
-./build/bin/macosArm64/releaseExecutable/aws-profile.kexe --help
-```
-
-Then create your config:
-
-```bash
-mkdir -p ~/.config/aws-profile
-cat > ~/.config/aws-profile/config.toml << 'EOF'
-[sso]
-session = "your-sso-session"
-
-[permission_sets]
-standing = "Terraform"
-elevated = "TerraformElevated"
-
-[accounts.prod-1]
-account_id = "111111111111"
-region = "eu-west-1"
-EOF
-```
-
-And test:
-
-```bash
-aws-profile prod-1
-aws-profile prod-1+
-aws-profile list
-aws-profile current prod-1
 ```
 
 ### macOS without full Xcode
@@ -241,7 +229,6 @@ If you have only the Command Line Tools (not the Xcode app), the Kotlin/Native l
 requires a workaround because it calls `xcodebuild -version` to detect the SDK:
 
 ```bash
-# One-time setup: create a stub xcodebuild
 mkdir -p /tmp/fake-xcode-bin
 cat > /tmp/fake-xcode-bin/xcodebuild << 'SCRIPT'
 #!/bin/sh
@@ -250,29 +237,17 @@ echo "Build version 16A5230g"
 SCRIPT
 chmod +x /tmp/fake-xcode-bin/xcodebuild
 
-# Build and test with the stub in PATH
-PATH="/tmp/fake-xcode-bin:$PATH" \
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk \
-./gradlew macosArm64Test
-
 PATH="/tmp/fake-xcode-bin:$PATH" \
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk \
 ./gradlew linkReleaseExecutableMacosArm64
 ```
 
-If you have the full Xcode app installed, just run `./gradlew` normally without the prefix.
-
 ### Java version
 
-Gradle 8.14 requires Java 17–24. If your default `java` is version 25 or newer, point
-Gradle at an older JDK:
+Gradle 8.14 requires Java 17–24. If your default `java` is version 25 or newer:
 
 ```bash
-# Temporary override for one command
-JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew macosArm64Test
-
-# Or set permanently in gradle.properties (already done in this repo for Java 24)
-# org.gradle.java.home=/path/to/jdk
+JAVA_HOME=$(/usr/libexec/java_home -v 24) ./gradlew macosArm64Test
 ```
 
 ---
@@ -280,99 +255,21 @@ JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew macosArm64Test
 ## Development
 
 ```bash
-./gradlew macosArm64Test      # run tests on the current machine (macOS ARM64)
-./gradlew linuxX64Test        # run tests when on Linux x64
+./gradlew macosArm64Test      # run tests (macOS ARM64)
 ./gradlew check               # all enabled tests
-./gradlew build               # compile all targets
-```
-
-Build a specific target:
-
-```bash
-./gradlew linkReleaseExecutableMacosArm64
-# → build/bin/macosArm64/releaseExecutable/aws-profile.kexe
 ```
 
 ---
 
-## Publishing to GitHub
+## Releasing
 
-### 1. Create the repositories
-
-```bash
-# From the aws-profile directory
-gh repo create lorenzo85/aws-profile \
-  --public \
-  --source=. \
-  --remote=origin \
-  --push
-
-# From the homebrew-tap directory
-cd ../homebrew-tap
-gh repo create lorenzo85/homebrew-tap \
-  --public \
-  --source=. \
-  --remote=origin \
-  --push
-```
-
-### 2. Add the required secret
-
-Go to **`lorenzo85/aws-profile` → Settings → Secrets and variables → Actions** and create:
-
-| Secret name | Value |
-|-------------|-------|
-| `HOMEBREW_TAP_TOKEN` | Fine-grained PAT — see below |
-
-Create the token at **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**:
-
-- Resource owner: `lorenzo85`
-- Repository access: **Only selected repositories** → `homebrew-tap`
-- Permissions → Contents: **Read and write**
-
-This token is the only credential the release workflow needs. It has no access to any
-other repository. Rotate it annually or on suspected compromise.
-
-### 3. Make the first release
+Push a version tag — CI builds all four platform binaries, creates a GitHub release, and
+updates the Homebrew formula automatically:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
-
-GitHub Actions then runs automatically:
-
-```
-git tag v0.1.0
-      ↓
-GitHub Actions (4 parallel jobs)
-      ├── macos-14       → aws-profile-darwin-arm64.tar.gz
-      ├── macos-13       → aws-profile-darwin-amd64.tar.gz
-      ├── ubuntu-latest  → aws-profile-linux-amd64.tar.gz
-      └── ubuntu-24-arm  → aws-profile-linux-arm64.tar.gz
-      ↓
-GitHub Release (with checksums.txt)
-      ↓
-lorenzo85/homebrew-tap updated automatically
-      ↓
-brew install lorenzo85/tap/aws-profile
-```
-
-### 4. Install via Homebrew
-
-```bash
-brew install lorenzo85/tap/aws-profile
-aws-profile --version
-```
-
----
-
-## Updating Homebrew for a new release
-
-No manual steps are needed. Every time you push a new tag (`v0.2.0`, `v1.0.0`, etc.),
-the release workflow recalculates the SHA-256 checksums from the fresh artifacts and
-commits the updated formula to `lorenzo85/homebrew-tap`. Homebrew users get the new version
-on their next `brew upgrade`.
 
 ---
 
@@ -382,7 +279,7 @@ on their next `brew upgrade`.
 CLI (CliParser, Cli)
  │
  ▼
-Application (ProfileSwitcher, AccountResolver, CurrentProfileService, LoginService)
+Application (ProfileSwitcher, InitService, CurrentProfileService, LoginService)
  │
  ▼
 Ports (ConfigurationRepository, AwsConfigRepository, ProcessRunner)
@@ -393,7 +290,3 @@ Infrastructure
   ├── AwsConfigFileRepository      — reads/writes ~/.aws/config (atomic)
   └── NativeProcessRunner          — executes aws sso login via fork/exec
 ```
-
-The domain and application layers have no knowledge of TOML, file paths, or the AWS CLI.
-Swapping the config format or the account source requires no changes to the CLI or
-business logic.
