@@ -267,8 +267,11 @@ jobs:
 
             def caveats
               <<~EOS
-                To use the awsp interactive profile switcher in zsh, add to ~/.zshrc:
-                  source #{opt_share}/zsh/site-functions/_awsp
+                To use the awsp interactive profile switcher in zsh, run once:
+                  echo 'source #{opt_share}/zsh/site-functions/_awsp' >> ~/.zshrc
+
+                Then reload your shell or run:
+                  source ~/.zshrc
 
                 Fish shell loads awsp automatically — no extra steps needed.
               EOS
