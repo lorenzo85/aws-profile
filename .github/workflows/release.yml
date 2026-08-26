@@ -235,18 +235,7 @@ jobs:
                   set account (aws-profile list | fzf --prompt="AWS account: " --height=~40%)
                   test -n "\$account" || return
                   set start_url (aws configure get sso_start_url --profile \$account 2>/dev/null)
-                  if not python3 -c "
-import json,glob,os,sys
-from datetime import datetime,timezone
-for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')):
-  try:
-    d=json.load(open(f))
-    if d.get('startUrl')==sys.argv[1] and 'accessToken' in d:
-      exp=datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00'))
-      sys.exit(0 if exp>datetime.now(timezone.utc) else 1)
-  except: pass
-sys.exit(1)
-" \$start_url 2>/dev/null
+                  if not python3 -c "import json,glob,os,sys; from datetime import datetime,timezone; m=next((d for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')) for d in [json.load(open(f))] if d.get('startUrl')==sys.argv[1] and d.get('accessToken')),None); sys.exit(0 if m and datetime.fromisoformat(m['expiresAt'].replace('Z','+00:00'))>datetime.now(timezone.utc) else 1)" \$start_url 2>/dev/null
                     aws sso login --profile \$account
                   end
                   read -l -P "Elevated access? [y/N] " elevated
@@ -265,18 +254,7 @@ sys.exit(1)
                   local account start_url elevated
                   account=\$(aws-profile list | fzf --prompt="AWS account: " --height=~40%) || return
                   start_url=\$(aws configure get sso_start_url --profile "\$account" 2>/dev/null)
-                  if ! python3 -c "
-import json,glob,os,sys
-from datetime import datetime,timezone
-for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')):
-  try:
-    d=json.load(open(f))
-    if d.get('startUrl')==sys.argv[1] and 'accessToken' in d:
-      exp=datetime.fromisoformat(d['expiresAt'].replace('Z','+00:00'))
-      sys.exit(0 if exp>datetime.now(timezone.utc) else 1)
-  except: pass
-sys.exit(1)
-" "\$start_url" 2>/dev/null; then
+                  if ! python3 -c "import json,glob,os,sys; from datetime import datetime,timezone; m=next((d for f in glob.glob(os.path.expanduser('~/.aws/sso/cache/*.json')) for d in [json.load(open(f))] if d.get('startUrl')==sys.argv[1] and d.get('accessToken')),None); sys.exit(0 if m and datetime.fromisoformat(m['expiresAt'].replace('Z','+00:00'))>datetime.now(timezone.utc) else 1)" "\$start_url" 2>/dev/null; then
                     aws sso login --profile "\$account"
                   fi
                   read "elevated?Elevated access? [y/N] "
